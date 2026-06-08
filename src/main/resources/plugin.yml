@@ -1,0 +1,14 @@
+name: ServerWebAdmin
+version: 1.0.0
+main: me.flaxi.serverwebadmin.ServerWebAdmin
+author: Flaxi
+description: Simple Minecraft Server Web Admin Plugin
+commands:
+  webadmin:
+    description: Server Web Admin command
+    usage: /webadmin
+    permission: serverwebadmin.use
+permissions:
+  serverwebadmin.use:
+    description: Allow use ServerWebAdmin command
+    default: op

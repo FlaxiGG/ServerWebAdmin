@@ -1,0 +1,3 @@
+web:
+  port: 8080
+  admin-token: "@M!ckz@05O"
