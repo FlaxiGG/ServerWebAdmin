@@ -10,9 +10,13 @@ import org.bukkit.plugin.java.JavaPlugin;
 public class ServerWebAdmin extends JavaPlugin {
 
     private WebServer webServer;
+    private TpsMonitor tpsMonitor;
 
     @Override
     public void onEnable() {
+        tpsMonitor = new TpsMonitor();
+        tpsMonitor.start(this);
+
         getLogger().info("ServerWebAdmin Enabled!");
 
         saveDefaultConfig();
@@ -21,7 +25,7 @@ public class ServerWebAdmin extends JavaPlugin {
         String token = getConfig().getString("web.admin-token", "change-this-token");
 
         try {
-            webServer = new WebServer(this, port, token);
+            webServer = new WebServer(this, port, token, tpsMonitor);
             getLogger().info("Web Server Started on Port " + port);
         } catch (Exception e) {
             e.printStackTrace();
@@ -32,6 +36,9 @@ public class ServerWebAdmin extends JavaPlugin {
     public void onDisable() {
         if (webServer != null) {
             webServer.stop();
+        }
+        if (tpsMonitor != null) {
+            tpsMonitor.stop();
         }
         getLogger().info("ServerWebAdmin Disabled!");
     }
