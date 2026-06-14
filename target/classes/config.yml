@@ -1,3 +1,6 @@
 web:
   port: 8080
-  admin-token: "@M!ckz@05O"
+alerts:
+  kick: "You have been kicked by Web Admin."
+  ban_reason: "Banned by Web Admin"
+  ban_kick: "You have been banned by Web Admin."

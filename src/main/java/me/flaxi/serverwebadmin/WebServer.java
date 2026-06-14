@@ -15,14 +15,16 @@ import java.lang.management.ManagementFactory;
 public class WebServer extends NanoHTTPD {
 
     private final ServerWebAdmin plugin;
-    private final String adminToken;
+    private final Map<String, String> users;
+    private final Map<String, String> alerts;
     private final ActionLogger actionLogger;
     private final TpsMonitor tpsMonitor;
 
-    public WebServer(ServerWebAdmin plugin, int port, String adminToken, TpsMonitor tpsMonitor) throws IOException {
+    public WebServer(ServerWebAdmin plugin, int port, Map<String, String> users, Map<String, String> alerts, TpsMonitor tpsMonitor) throws IOException {
         super(port);
         this.plugin = plugin;
-        this.adminToken = adminToken;
+        this.users = users;
+        this.alerts = alerts;
         this.tpsMonitor = tpsMonitor;
         this.actionLogger = new ActionLogger(plugin);
         start(SOCKET_READ_TIMEOUT, false);
@@ -32,6 +34,99 @@ public class WebServer extends NanoHTTPD {
     public Response serve(IHTTPSession session) {
         String uri = session.getUri();
         Method method = session.getMethod();
+
+        if (uri.equals("/api/login") && method == Method.POST) {
+            Map<String, String> params = session.getParms();
+            String username = params.get("username");
+            String password = params.get("password");
+            if (username == null || password == null || username.isEmpty() || password.isEmpty()) {
+                return json("{\"success\":false,\"message\":\"Missing username or password\"}");
+            }
+            String storedPassword = users.get(username);
+            if (storedPassword != null && storedPassword.equals(password)) {
+                final String ip = getClientIp(session);
+                actionLogger.write("LOGIN", username, ip);
+                return json("{\"success\":true,\"token\":\"" + password + "\",\"message\":\"Login successful\"}");
+            }
+            return json("{\"success\":false,\"message\":\"Invalid username or password\"}");
+        }
+
+        if (uri.equals("/api/users") && method == Method.GET) {
+            if (!isAuthorized(session)) {
+                return unauthorized();
+            }
+            StringBuilder sb = new StringBuilder("[");
+            int idx = 0;
+            for (String username : users.keySet()) {
+                if (idx > 0) sb.append(",");
+                sb.append("{\"username\":\"").append(escapeJson(username)).append("\"}");
+                idx++;
+            }
+            sb.append("]");
+            return json(sb.toString());
+        }
+
+        if (uri.equals("/api/users/add") && method == Method.POST) {
+            if (!isAuthorized(session)) {
+                return unauthorized();
+            }
+            Map<String, String> params = session.getParms();
+            final String username = params.get("username");
+            final String password = params.get("password");
+            if (username == null || password == null || username.isEmpty() || password.isEmpty()) {
+                return json("{\"success\":false,\"message\":\"Missing username or password\"}");
+            }
+            if (users.containsKey(username)) {
+                return json("{\"success\":false,\"message\":\"User already exists\"}");
+            }
+            users.put(username, password);
+            plugin.saveUsers(users);
+            final String ip = getClientIp(session);
+            actionLogger.write("USER_ADD", username, ip);
+            return json("{\"success\":true,\"message\":\"User added\"}");
+        }
+
+        if (uri.equals("/api/users/remove") && method == Method.POST) {
+            if (!isAuthorized(session)) {
+                return unauthorized();
+            }
+            Map<String, String> params = session.getParms();
+            final String username = params.get("username");
+            if (username == null || username.isEmpty()) {
+                return json("{\"success\":false,\"message\":\"Missing username parameter\"}");
+            }
+            if (!users.containsKey(username)) {
+                return json("{\"success\":false,\"message\":\"User not found\"}");
+            }
+            if (users.size() <= 1) {
+                return json("{\"success\":false,\"message\":\"Cannot remove the last user\"}");
+            }
+            users.remove(username);
+            plugin.saveUsers(users);
+            final String ip = getClientIp(session);
+            actionLogger.write("USER_REMOVE", username, ip);
+            return json("{\"success\":true,\"message\":\"User removed\"}");
+        }
+
+        if (uri.equals("/api/users/change-password") && method == Method.POST) {
+            if (!isAuthorized(session)) {
+                return unauthorized();
+            }
+            Map<String, String> params = session.getParms();
+            final String username = params.get("username");
+            final String newPassword = params.get("password");
+            if (username == null || newPassword == null || username.isEmpty() || newPassword.isEmpty()) {
+                return json("{\"success\":false,\"message\":\"Missing username or password\"}");
+            }
+            if (!users.containsKey(username)) {
+                return json("{\"success\":false,\"message\":\"User not found\"}");
+            }
+            users.put(username, newPassword);
+            plugin.saveUsers(users);
+            final String ip = getClientIp(session);
+            actionLogger.write("USER_PASSWORD", username, ip);
+            return json("{\"success\":true,\"message\":\"Password changed\"}");
+        }
 
         if (uri.equals("/api/status") && method == Method.GET) {
             return json("{\"status\":\"online\",\"players\":" + Bukkit.getOnlinePlayers().size() + "}");
@@ -87,7 +182,7 @@ public class WebServer extends NanoHTTPD {
                     Player target = Bukkit.getPlayer(playerName);
 
                     if (target != null) {
-                        target.kickPlayer("You have been kicked by Web Admin.");
+                        target.kickPlayer(alerts.get("kick"));
                     }
                 }
             });
@@ -114,7 +209,7 @@ public class WebServer extends NanoHTTPD {
                 public void run() {
                     Bukkit.getBanList(BanList.Type.NAME).addBan(
                             playerName,
-                            "Banned by Web Admin",
+                            alerts.get("ban_reason"),
                             null,
                             "WebAdmin"
                     );
@@ -122,7 +217,7 @@ public class WebServer extends NanoHTTPD {
                     Player target = Bukkit.getPlayer(playerName);
 
                     if (target != null) {
-                        target.kickPlayer("You have been banned by Web Admin.");
+                        target.kickPlayer(alerts.get("ban_kick"));
                     }
                 }
             });
@@ -165,6 +260,8 @@ public class WebServer extends NanoHTTPD {
 
             return json(data);
         }
+
+        //Server maintain command
 
         if (uri.equals("/api/reload") && method == Method.POST) {
             if (!isAuthorized(session)) {
@@ -222,6 +319,127 @@ public class WebServer extends NanoHTTPD {
 
             return json("{\"success\":true,\"message\":\"Saving world then stopping\u2026\"}");
         }
+
+        //Weather command
+
+        if (uri.equals("/api/clear") && method == Method.POST) {
+            if (!isAuthorized(session)) {
+                return unauthorized();
+            }
+            final String ip = getClientIp(session);
+            actionLogger.write("WEATHER", "CLEAR", ip);
+
+            Bukkit.getScheduler().runTask(plugin, new Runnable() {
+                @Override
+                public void run() {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "weather clear");
+                }
+            });
+
+            return json("{\"success\":true,\"message\":\"Weather has been clear.\"}");
+        }
+
+        if (uri.equals("/api/rain") && method == Method.POST) {
+            if (!isAuthorized(session)) {
+                return unauthorized();
+            }
+            final String ip = getClientIp(session);
+            actionLogger.write("WEATHER", "RAIN", ip);
+
+            Bukkit.getScheduler().runTask(plugin, new Runnable() {
+                @Override
+                public void run() {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "weather rain");
+                }
+            });
+
+            return json("{\"success\":true,\"message\":\"Weather has been raining.\"}");
+        }
+
+        if (uri.equals("/api/thunder") && method == Method.POST) {
+            if (!isAuthorized(session)) {
+                return unauthorized();
+            }
+            final String ip = getClientIp(session);
+            actionLogger.write("WEATHER", "THUNDER", ip);
+
+            Bukkit.getScheduler().runTask(plugin, new Runnable() {
+                @Override
+                public void run() {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "weather thunder");
+                }
+            });
+
+            return json("{\"success\":true,\"message\":\"Weather has been thundering.\"}");
+        }
+
+        //Time set command
+        if (uri.equals("/api/day") && method == Method.POST) {
+            if (!isAuthorized(session)) {
+                return unauthorized();
+            }
+            final String ip = getClientIp(session);
+            actionLogger.write("TIME SET", "DAY", ip);
+
+            Bukkit.getScheduler().runTask(plugin, new Runnable() {
+                @Override
+                public void run() {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "time set day");
+                }
+            });
+
+            return json("{\"success\":true,\"message\":\"Time has been set to day.\"}");
+        }
+        if (uri.equals("/api/night") && method == Method.POST) {
+            if (!isAuthorized(session)) {
+                return unauthorized();
+            }
+            final String ip = getClientIp(session);
+            actionLogger.write("TIME SET", "NIGHT", ip);
+
+            Bukkit.getScheduler().runTask(plugin, new Runnable() {
+                @Override
+                public void run() {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "time set night");
+                }
+            });
+
+            return json("{\"success\":true,\"message\":\"Time has been set to night.\"}");
+        }
+        if (uri.equals("/api/noon") && method == Method.POST) {
+            if (!isAuthorized(session)) {
+                return unauthorized();
+            }
+            final String ip = getClientIp(session);
+            actionLogger.write("TIME SET", "NOON", ip);
+
+            Bukkit.getScheduler().runTask(plugin, new Runnable() {
+                @Override
+                public void run() {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "time set noon");
+                }
+            });
+
+            return json("{\"success\":true,\"message\":\"Time has been set to noon.\"}");
+        }
+        if (uri.equals("/api/midnight") && method == Method.POST) {
+            if (!isAuthorized(session)) {
+                return unauthorized();
+            }
+            final String ip = getClientIp(session);
+            actionLogger.write("TIME SET", "MIDNIGHT", ip);
+
+            Bukkit.getScheduler().runTask(plugin, new Runnable() {
+                @Override
+                public void run() {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "time set midnight");
+                }
+            });
+
+            return json("{\"success\":true,\"message\":\"Time has been set to midnight.\"}");
+        }
+
+        //Players teleport command
 
         if (uri.equals("/api/teleport") && method == Method.POST) {
             if (!isAuthorized(session)) {
@@ -283,8 +501,6 @@ public class WebServer extends NanoHTTPD {
                     } else if (action.equals("feed")) {
                         target.setFoodLevel(20);
                         target.setSaturation(10);
-                    } else if (action.equals("clear")) {
-                        target.getInventory().clear();
                     } else if (action.equals("kill")) {
                         target.setHealth(0);
                     }
@@ -738,7 +954,7 @@ public class WebServer extends NanoHTTPD {
                 ".toggle-sw::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .2s ease}" +
                 ".toggle-sw.on::after{transform:translateX(20px)}" +
                 /* Server Control card */
-                ".ctrl-row{display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center}" +
+                ".ctrl-row{display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center;margin-top:30px}" +
                 /* Responsive sidebar */
                 "@media(max-width:768px){" +
                 ".app{flex-direction:column}" +
@@ -753,6 +969,22 @@ public class WebServer extends NanoHTTPD {
                 "</style>" +
                 "</head>" +
                 "<body>" +
+                /* Login page */
+                "<div id=\"login-page\" style=\"display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#ece3d7 0%,#f4efe9 100%);\">" +
+                "<div style=\"background:#fff;border-radius:16px;padding:2.5rem;box-shadow:0 4px 24px rgba(0,0,0,.08);border:1px solid #ece7df;max-width:380px;width:90%;\">" +
+                "<div style=\"text-align:center;margin-bottom:1.75rem;\">" +
+                "<span style=\"display:inline-block;width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#8cbfa8,#8baec2);margin-bottom:0.75rem;\"></span>" +
+                "<h1 style=\"font-size:1.25rem;font-weight:700;color:#3d3d3d;\">Server Web Admin</h1>" +
+                "<p style=\"font-size:0.75rem;color:#8a847c;margin-top:0.25rem;\">Sign in to continue</p>" +
+                "</div>" +
+                "<div id=\"login-error\" style=\"background:#fde8e8;color:#6b3a3a;font-size:0.75rem;padding:0.5rem 0.75rem;border-radius:8px;margin-bottom:1rem;display:none;\"></div>" +
+                "<input id=\"login-username\" class=\"input\" type=\"text\" autocomplete=\"username\" placeholder=\"Username\" style=\"width:100%;margin-bottom:0.625rem;\">" +
+                "<input id=\"login-password\" class=\"input\" type=\"password\" autocomplete=\"current-password\" placeholder=\"Password\" style=\"width:100%;margin-bottom:1rem;\" onkeydown=\"if(event.key==='Enter')doLogin()\">" +
+                "<button class=\"btn btn-primary\" onclick=\"doLogin()\" style=\"width:100%;justify-content:center;font-size:0.8125rem;padding:0.625rem;\">Sign In</button>" +
+                "</div>" +
+                "</div>" +
+                /* App container */
+                "<div id=\"app-container\" style=\"display:none;\">" +
                 /* App layout */
                 "<div class=\"app\">" +
                 /* Sidebar */
@@ -765,6 +997,8 @@ public class WebServer extends NanoHTTPD {
                 "<button class=\"nav-btn\" data-page=\"console\" style=\"--nav-accent:#8baec2\" onclick=\"switchPage('console')\"><span class=\"nav-dot\" style=\"background:#8baec2\"></span><span class=\"nav-label\">Console</span></button>" +
                 "<button class=\"nav-btn\" data-page=\"bans\" style=\"--nav-accent:#e49494\" onclick=\"switchPage('bans')\"><span class=\"nav-dot\" style=\"background:#e49494\"></span><span class=\"nav-label\">Bans</span></button>" +
                 "<button class=\"nav-btn\" data-page=\"whitelist\" style=\"--nav-accent:#dbbc7c\" onclick=\"switchPage('whitelist')\"><span class=\"nav-dot\" style=\"background:#dbbc7c\"></span><span class=\"nav-label\">Whitelist</span></button>" +
+                "<button class=\"nav-btn\" data-page=\"users\" style=\"--nav-accent:#a89ec4\" onclick=\"switchPage('users')\"><span class=\"nav-dot\" style=\"background:#a89ec4\"></span><span class=\"nav-label\">User Management</span></button>" +
+                "<button class=\"nav-btn\" onclick=\"doLogout()\" style=\"margin-top:auto;color:#8a847c;\"><span class=\"nav-label\" style=\"font-size:0.75rem;\">Logout</span></button>" +
                 "</nav>" +
                 /* Main area */
                 "<div class=\"main-area\">" +
@@ -826,17 +1060,26 @@ public class WebServer extends NanoHTTPD {
                 "<button class=\"btn btn-restart\" onclick=\"reloadServer()\">Reload Server</button>" +
                 "<button class=\"btn btn-stop\" onclick=\"stopServer()\">Stop Server</button>" +
                 "</div>" +
+                /* Weather section */
+                "<div style=\"margin-top:1.25rem;display:flex;align-items:center;gap:0.625rem;\">" +
+                "<span style=\"font-size:0.85rem;font-weight:600;color:#4a4a4a;\">Weather</span>" +
+                "<span style=\"font-size:0.75rem;color:#8a847c;\">Clear, rain or thunder</span>" +
                 "</div>" +
-                /* Token card */
-                "<div class=\"card card-full\">" +
-                "<div class=\"card-header\">" +
-                "<span class=\"dot dot-amber\" aria-hidden=\"true\"></span>" +
-                "<h2>Admin Token</h2>" +
+                "<div class=\"ctrl-row\">" +
+                "<button class=\"btn btn-save\" onclick=\"weatherClear()\">Clear</button>" +
+                "<button class=\"btn btn-restart\" onclick=\"weatherRain()\">Rain</button>" +
+                "<button class=\"btn btn-stop\" onclick=\"weatherThunder()\">Thunder</button>" +
                 "</div>" +
-                "<div class=\"token-row\">" +
-                "<label for=\"token\" class=\"sr-only\">Admin Token</label>" +
-                "<input id=\"token\" class=\"input\" type=\"text\" autocomplete=\"off\" spellcheck=\"false\" placeholder=\"Enter admin token\u2026\">" +
-                "<button class=\"btn btn-primary\" onclick=\"saveToken()\" type=\"button\">Save Token</button>" +
+                /* Times section */
+                "<div style=\"margin-top:1.25rem;display:flex;align-items:center;gap:0.625rem;\">" +
+                "<span style=\"font-size:0.85rem;font-weight:600;color:#4a4a4a;\">Times</span>" +
+                "<span style=\"font-size:0.75rem;color:#8a847c;\">Day, night, noon or midnight</span>" +
+                "</div>" +
+                "<div class=\"ctrl-row\">" +
+                "<button class=\"btn btn-save\" onclick=\"timeDay()\">Day</button>" +
+                "<button class=\"btn btn-restart\" onclick=\"timeNight()\">Night</button>" +
+                "<button class=\"btn btn-stop\" onclick=\"timeNoon()\">Noon</button>" +
+                "<button class=\"btn btn-stop\" onclick=\"timeMidnight()\">Midnight</button>" +
                 "</div>" +
                 "</div>" +
                 /* Players card */
@@ -910,6 +1153,24 @@ public class WebServer extends NanoHTTPD {
                 "</div>" +
                 "</div>" +
                 "</section>" +
+                /* === USER MANAGEMENT === */
+                "<section id=\"page-users\" class=\"page\">" +
+                "<div class=\"page-content\">" +
+                "<h1 style=\"font-size:1.5rem;font-weight:700;color:#3d3d3d;margin-bottom:1.25rem;\">User Management</h1>" +
+                "<div class=\"card card-full\">" +
+                "<div class=\"card-header\"><span class=\"dot\" style=\"background:#a89ec4\" aria-hidden=\"true\"></span><h2>Add User</h2></div>" +
+                "<div class=\"token-row\">" +
+                "<input id=\"user-add-name\" class=\"input\" type=\"text\" autocomplete=\"off\" spellcheck=\"false\" placeholder=\"Username\u2026\" style=\"flex:1\" onkeydown=\"if(event.key==='Enter')addUser()\">" +
+                "<input id=\"user-add-pass\" class=\"input\" type=\"password\" autocomplete=\"off\" placeholder=\"Password\u2026\" style=\"flex:1\" onkeydown=\"if(event.key==='Enter')addUser()\">" +
+                "<button class=\"btn btn-primary\" onclick=\"addUser()\">Add</button>" +
+                "</div>" +
+                "</div>" +
+                "<div class=\"card card-full\" style=\"margin-top:1rem;\">" +
+                "<div class=\"card-header\"><span class=\"dot\" style=\"background:#a89ec4\" aria-hidden=\"true\"></span><h2>Users</h2></div>" +
+                "<div id=\"user-list\"><div class=\"empty\">Loading\u2026</div></div>" +
+                "</div>" +
+                "</div>" +
+                "</section>" +
                 "</div>" + /* end main-area */
                 "</div>" + /* end app */
                 /* Modals */
@@ -942,15 +1203,52 @@ public class WebServer extends NanoHTTPD {
                 "<footer class=\"footer\">Server Web Admin &copy; 2026</footer>" +
                 /* Toast */
                 "<div id=\"toast\" class=\"toast\" role=\"status\" aria-live=\"polite\"></div>" +
+                "</div>" + /* end app-container */
                 /* Scripts */
                 "<script>" +
-                "let token=localStorage.getItem('adminToken')||'';" +
-                "document.getElementById('token').value=token;" +
+                "var token=localStorage.getItem('adminToken')||'';" +
                 /* Toast */
                 "function showToast(msg){" +
                 " var t=document.getElementById('toast');" +
                 " t.textContent=msg;t.classList.add('show');" +
                 " setTimeout(function(){t.classList.remove('show')},2800)" +
+                "}" +
+                /* Login */
+                "function doLogin(){" +
+                " var u=document.getElementById('login-username').value.trim();" +
+                " var p=document.getElementById('login-password').value.trim();" +
+                " if(!u||!p){showLoginError('Please enter username and password');return;}" +
+                " fetch('/api/login?username='+encodeURIComponent(u)+'&password='+encodeURIComponent(p),{method:'POST'})" +
+                " .then(function(r){return r.json()})" +
+                " .then(function(data){" +
+                "   if(data.success){" +
+                "     token=data.token;" +
+                "     localStorage.setItem('adminToken',token);" +
+                "     document.getElementById('login-page').style.display='none';" +
+                "     document.getElementById('app-container').style.display='block';" +
+                "     clearPageTimers();" +
+                "     loadPlayers();loadServerInfo();loadConsoleDash();" +
+                "     pageTimers.p=setInterval(loadPlayers,5000);" +
+                "     pageTimers.s=setInterval(loadServerInfo,5000);" +
+                "     pageTimers.d=setInterval(loadConsoleDash,5000);" +
+                "   }else{" +
+                "     showLoginError(data.message);" +
+                "   }" +
+                " }).catch(function(){showLoginError('Connection error. Please try again.');});" +
+                "}" +
+                "function showLoginError(msg){" +
+                " var e=document.getElementById('login-error');" +
+                " e.textContent=msg;e.style.display='block';" +
+                " setTimeout(function(){e.style.display='none'},4000);" +
+                "}" +
+                "function doLogout(){" +
+                " localStorage.removeItem('adminToken');" +
+                " token='';" +
+                " document.getElementById('login-page').style.display='flex';" +
+                " document.getElementById('app-container').style.display='none';" +
+                " document.getElementById('login-username').value='';" +
+                " document.getElementById('login-password').value='';" +
+                " clearPageTimers();" +
                 "}" +
                 /* Page switching */
                 "var currentPage='dashboard';" +
@@ -964,22 +1262,16 @@ public class WebServer extends NanoHTTPD {
                 " if(page==='console'){loadConsole();pageTimers.c=setInterval(loadConsole,3000);}" +
                 " if(page==='bans')loadBans();" +
                 " if(page==='whitelist')loadWhitelist();" +
+                " if(page==='users')loadUsers();" +
                 "}" +
                 "var hash=location.hash.replace('#','');" +
-                "if(hash&&['dashboard','console','bans','whitelist'].indexOf(hash)!==-1){" +
+                "if(hash&&['dashboard','console','bans','whitelist','users'].indexOf(hash)!==-1){" +
                 " currentPage=hash;" +
                 " document.querySelector('.nav-btn.active').classList.remove('active');" +
                 " document.querySelector('.nav-btn[data-page=\"'+hash+'\"]').classList.add('active');" +
                 "}else{location.hash='dashboard';}" +
                 "function clearPageTimers(){" +
                 " for(var k in pageTimers){clearInterval(pageTimers[k]);}pageTimers={};" +
-                "}" +
-                /* Token */
-                "function saveToken(){" +
-                " token=document.getElementById('token').value;" +
-                " localStorage.setItem('adminToken',token);" +
-                " showToast('Token saved');" +
-                " loadPlayers();loadServerInfo();" +
                 "}" +
                 /* Players - enhanced with health + quick actions */
                 "function loadPlayers(){" +
@@ -1010,7 +1302,6 @@ public class WebServer extends NanoHTTPD {
                 "       '<select class=\"gm-select\" onchange=\"playerAction(\\''+p.name+'\\',\\'gamemode \\'+this.value)\"><option value=\"\">GM...</option><option value=\"survival\">Survival</option><option value=\"creative\">Creative</option><option value=\"adventure\">Adventure</option><option value=\"spectator\">Spectator</option></select>'+" +
                 "       '<button class=\"btn\" style=\"background:#c4e8d4;color:#3a5c4a;font-size:0.6875rem;padding:0.25rem 0.5rem;\" onclick=\"playerAction(\\''+p.name+'\\',\\'heal\\')\">Heal</button>'+" +
                 "       '<button class=\"btn\" style=\"background:#d4dce8;color:#3a4a5c;font-size:0.6875rem;padding:0.25rem 0.5rem;\" onclick=\"playerAction(\\''+p.name+'\\',\\'feed\\')\">Feed</button>'+" +
-                "       '<button class=\"btn\" style=\"background:#e8d4d4;color:#5c3a3a;font-size:0.6875rem;padding:0.25rem 0.5rem;\" onclick=\"playerAction(\\''+p.name+'\\',\\'clear\\')\">Clear</button>'+" +
                 "       '<button class=\"btn\" style=\"background:#e8d4e0;color:#5c3a4a;font-size:0.6875rem;padding:0.25rem 0.5rem;\" onclick=\"playerAction(\\''+p.name+'\\',\\'kill\\')\">Kill</button>'+" +
                 "       '<span style=\"color:#e5ded5;margin:0 0.25rem;font-size:0.75rem;\">|</span>'+" +
                 "       '<button class=\"btn btn-goto\" onclick=\"showGoToModal(\\''+p.name+'\\')\">Go To</button>'+" +
@@ -1154,6 +1445,50 @@ public class WebServer extends NanoHTTPD {
                 " .then(function(r){return r.json()})" +
                 " .then(function(data){showToast(data.message);});" +
                 "}" +
+                /* Weather command */
+                "function weatherClear(){" +
+                " showToast('Weather Clear\u2026');" +
+                " fetch('/api/clear?token='+encodeURIComponent(token),{method:'POST'})" +
+                " .then(function(r){return r.json()})" +
+                " .then(function(data){showToast(data.message);});" +
+                "}" +
+                "function weatherRain(){" +
+                " showToast('Weather Rain\u2026');" +
+                " fetch('/api/rain?token='+encodeURIComponent(token),{method:'POST'})" +
+                " .then(function(r){return r.json()})" +
+                " .then(function(data){showToast(data.message);});" +
+                "}" +
+                "function weatherThunder(){" +
+                " showToast('Weather Thunder\u2026');" +
+                " fetch('/api/thunder?token='+encodeURIComponent(token),{method:'POST'})" +
+                " .then(function(r){return r.json()})" +
+                " .then(function(data){showToast(data.message);});" +
+                "}" +
+                /* Time Command */
+                "function timeDay(){" +
+                " showToast('Time Day\u2026');" +
+                " fetch('/api/day?token='+encodeURIComponent(token),{method:'POST'})" +
+                " .then(function(r){return r.json()})" +
+                " .then(function(data){showToast(data.message);});" +
+                "}" +
+                "function timeNight(){" +
+                " showToast('Time Night\u2026');" +
+                " fetch('/api/night?token='+encodeURIComponent(token),{method:'POST'})" +
+                " .then(function(r){return r.json()})" +
+                " .then(function(data){showToast(data.message);});" +
+                "}" +
+                "function timeNoon(){" +
+                " showToast('Time Noon\u2026');" +
+                " fetch('/api/noon?token='+encodeURIComponent(token),{method:'POST'})" +
+                " .then(function(r){return r.json()})" +
+                " .then(function(data){showToast(data.message);});" +
+                "}" +
+                "function timeMidnight(){" +
+                " showToast('Time Midnight\u2026');" +
+                " fetch('/api/midnight?token='+encodeURIComponent(token),{method:'POST'})" +
+                " .then(function(r){return r.json()})" +
+                " .then(function(data){showToast(data.message);});" +
+                "}" +
                 /* Teleport modal */
                 "var tpFromPlayer='';" +
                 "function showTeleportModal(player){" +
@@ -1225,13 +1560,66 @@ public class WebServer extends NanoHTTPD {
                 " var s=seconds%60;" +
                 " return h+'h '+m+'m '+s+'s';" +
                 "}" +
+                /* User Management */
+                "function loadUsers(){" +
+                " fetch('/api/users?token='+encodeURIComponent(token))" +
+                " .then(function(r){return r.json()})" +
+                " .then(function(data){" +
+                "   if(data.success===false)return;" +
+                "   var html='';" +
+                "   if(!data.length){html='<div class=\"empty\">No users found</div>';}" +
+                "   else{" +
+                "     html+='<table class=\"tbl\"><thead><tr><th>Username</th><th></th></tr></thead><tbody>';" +
+                "     data.forEach(function(u){" +
+                "       html+='<tr><td>'+u.username+'</td>';" +
+                "       html+='<td style=\"display:flex;gap:0.375rem;\">';" +
+                "       html+='<button class=\"btn\" style=\"background:#d4dce8;color:#3a4a5c;font-size:0.6875rem;padding:0.25rem 0.5rem;\" onclick=\"showChangePassword(\\''+u.username+'\\')\">Password</button>';" +
+                "       html+='<button class=\"btn\" style=\"background:#ecc8c8;color:#6b3a3a;font-size:0.6875rem;padding:0.25rem 0.5rem;\" onclick=\"removeUser(\\''+u.username+'\\')\">Remove</button>';" +
+                "       html+='</td></tr>';" +
+                "     });" +
+                "     html+='</tbody></table>';" +
+                "   }" +
+                "   document.getElementById('user-list').innerHTML=html;" +
+                " }).catch(function(){});" +
+                "}" +
+                "function addUser(){" +
+                " var n=document.getElementById('user-add-name').value.trim();" +
+                " var p=document.getElementById('user-add-pass').value.trim();" +
+                " if(!n||!p){showToast('Please enter username and password');return;}" +
+                " fetch('/api/users/add?username='+encodeURIComponent(n)+'&password='+encodeURIComponent(p)+'&token='+encodeURIComponent(token),{method:'POST'})" +
+                " .then(function(r){return r.json()})" +
+                " .then(function(data){" +
+                "   showToast(data.message);" +
+                "   document.getElementById('user-add-name').value='';" +
+                "   document.getElementById('user-add-pass').value='';" +
+                "   loadUsers();" +
+                " });" +
+                "}" +
+                "function removeUser(name){" +
+                " if(!confirm('Remove user '+name+'?'))return;" +
+                " fetch('/api/users/remove?username='+encodeURIComponent(name)+'&token='+encodeURIComponent(token),{method:'POST'})" +
+                " .then(function(r){return r.json()})" +
+                " .then(function(data){showToast(data.message);loadUsers();});" +
+                "}" +
+                "function showChangePassword(name){" +
+                " var p=prompt('Enter new password for '+name+':');" +
+                " if(!p)return;" +
+                " fetch('/api/users/change-password?username='+encodeURIComponent(name)+'&password='+encodeURIComponent(p)+'&token='+encodeURIComponent(token),{method:'POST'})" +
+                " .then(function(r){return r.json()})" +
+                " .then(function(data){showToast(data.message);loadUsers();});" +
+                "}" +
                 /* Init */
-                "loadPlayers();" +
-                "loadServerInfo();" +
-                "loadConsoleDash();" +
-                "setInterval(loadPlayers,5000);" +
-                "setInterval(loadServerInfo,5000);" +
-                "setInterval(loadConsoleDash,5000);" +
+                "if(token){" +
+                " document.getElementById('login-page').style.display='none';" +
+                " document.getElementById('app-container').style.display='block';" +
+                " loadPlayers();loadServerInfo();loadConsoleDash();" +
+                " pageTimers.p=setInterval(loadPlayers,5000);" +
+                " pageTimers.s=setInterval(loadServerInfo,5000);" +
+                " pageTimers.d=setInterval(loadConsoleDash,5000);" +
+                "}else{" +
+                " document.getElementById('login-page').style.display='flex';" +
+                " document.getElementById('app-container').style.display='none';" +
+                "}" +
                 "</script>" +
                 "</body>" +
                 "</html>";
@@ -1243,7 +1631,11 @@ public class WebServer extends NanoHTTPD {
         Map<String, String> params = session.getParms();
         String token = params.get("token");
 
-        return token != null && token.equals(adminToken);
+        if (token == null || token.isEmpty()) return false;
+        for (String password : users.values()) {
+            if (token.equals(password)) return true;
+        }
+        return false;
     }
 
     private Response unauthorized() {

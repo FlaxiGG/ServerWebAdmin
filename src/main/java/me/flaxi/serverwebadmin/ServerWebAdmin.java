@@ -4,13 +4,22 @@ import org.bukkit.BanList;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 
 public class ServerWebAdmin extends JavaPlugin {
 
     private WebServer webServer;
     private TpsMonitor tpsMonitor;
+    private File usersFile;
+    private YamlConfiguration usersConfig;
 
     @Override
     public void onEnable() {
@@ -22,13 +31,45 @@ public class ServerWebAdmin extends JavaPlugin {
         saveDefaultConfig();
 
         int port = getConfig().getInt("web.port", 8080);
-        String token = getConfig().getString("web.admin-token", "change-this-token");
+
+        Map<String, String> users = new HashMap<>();
+        usersFile = new File(getDataFolder(), "users.yml");
+        if (!usersFile.exists()) {
+            saveResource("users.yml", false);
+        }
+        usersConfig = YamlConfiguration.loadConfiguration(usersFile);
+        if (usersConfig.isConfigurationSection("users")) {
+            Set<String> keys = usersConfig.getConfigurationSection("users").getKeys(false);
+            for (String username : keys) {
+                String password = usersConfig.getString("users." + username + ".password");
+                if (password != null && !password.isEmpty()) {
+                    users.put(username, password);
+                }
+            }
+        }
+
+        Map<String, String> alerts = new HashMap<>();
+        alerts.put("kick", getConfig().getString("alerts.kick", "You have been kicked by Web Admin."));
+        alerts.put("ban_reason", getConfig().getString("alerts.ban_reason", "Banned by Web Admin"));
+        alerts.put("ban_kick", getConfig().getString("alerts.ban_kick", "You have been banned by Web Admin."));
 
         try {
-            webServer = new WebServer(this, port, token, tpsMonitor);
+            webServer = new WebServer(this, port, users, alerts, tpsMonitor);
             getLogger().info("Web Server Started on Port " + port);
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    public void saveUsers(Map<String, String> users) {
+        usersConfig.set("users", null);
+        for (Map.Entry<String, String> entry : users.entrySet()) {
+            usersConfig.set("users." + entry.getKey() + ".password", entry.getValue());
+        }
+        try {
+            usersConfig.save(usersFile);
+        } catch (IOException e) {
+            getLogger().warning("Failed to save users.yml: " + e.getMessage());
         }
     }
 
