@@ -4,7 +4,7 @@
   <groupId>me.flaxi</groupId>
   <artifactId>serverwebadmin</artifactId>
   <name>ServerWebAdmin</name>
-  <version>1.0.0</version>
+  <version>1.0.1</version>
   <build>
     <resources>
       <resource>

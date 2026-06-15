@@ -1,0 +1,21 @@
+<div class="page-content">
+  <h1 style="font-size:1.5rem;font-weight:700;color:#3d3d3d;margin-bottom:1.25rem;">User Management</h1>
+  <div class="card card-full">
+    <div class="card-header">
+      <span class="dot dot-purple" aria-hidden="true"></span>
+      <h2>Add User</h2>
+    </div>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+      <input id="user-add-name" class="input" type="text" autocomplete="off" spellcheck="false" placeholder="Username…" style="flex:1;min-width:120px;">
+      <input id="user-add-pass" class="input" type="password" autocomplete="off" spellcheck="false" placeholder="Password…" style="flex:1;min-width:120px;" onkeydown="if(event.key==='Enter')addUser()">
+      <button class="btn btn-primary" onclick="addUser()">Add</button>
+    </div>
+  </div>
+  <div class="card card-full" style="margin-top:1rem;">
+    <div class="card-header">
+      <span class="dot dot-purple" aria-hidden="true"></span>
+      <h2>Users</h2>
+    </div>
+    <div id="user-list"><div class="empty">Loading…</div></div>
+  </div>
+</div>

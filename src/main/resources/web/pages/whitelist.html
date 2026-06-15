@@ -1,0 +1,26 @@
+<div class="page-content">
+  <h1 style="font-size:1.5rem;font-weight:700;color:#3d3d3d;margin-bottom:1.25rem;">Whitelist Management</h1>
+  <div class="card card-full">
+    <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+      <span style="font-weight:600;color:#4a4a4a;">Whitelist</span>
+      <button id="wl-toggle" class="toggle-sw" onclick="toggleWhitelist()" aria-label="Toggle whitelist"></button>
+      <span id="wl-status" style="font-size:0.875rem;color:#8a847c;">Loading…</span>
+    </div>
+  </div>
+  <div class="card card-full" style="margin-top:1rem;">
+    <div class="card-header">
+      <span class="dot dot-amber" aria-hidden="true"></span><h2>Add Player</h2>
+    </div>
+    <div class="token-row">
+      <input id="wl-add-input" class="input" type="text" autocomplete="off" spellcheck="false"
+        placeholder="Player name…" style="flex:1" onkeydown="if(event.key==='Enter')addWhitelist()">
+      <button class="btn btn-primary" onclick="addWhitelist()">Add</button>
+    </div>
+  </div>
+  <div class="card card-full" style="margin-top:1rem;">
+    <div class="card-header">
+      <span class="dot dot-amber" aria-hidden="true"></span><h2>Whitelisted Players</h2>
+    </div>
+    <div id="wl-list"><div class="empty">Loading…</div></div>
+  </div>
+</div>

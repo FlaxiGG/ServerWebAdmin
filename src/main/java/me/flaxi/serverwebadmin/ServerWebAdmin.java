@@ -7,6 +7,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.mindrot.jbcrypt.BCrypt;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,14 +39,28 @@ public class ServerWebAdmin extends JavaPlugin {
             saveResource("users.yml", false);
         }
         usersConfig = YamlConfiguration.loadConfiguration(usersFile);
+        boolean needsSave = false;
         if (usersConfig.isConfigurationSection("users")) {
             Set<String> keys = usersConfig.getConfigurationSection("users").getKeys(false);
             for (String username : keys) {
-                String password = usersConfig.getString("users." + username + ".password");
-                if (password != null && !password.isEmpty()) {
-                    users.put(username, password);
+                String hash = usersConfig.getString("users." + username + ".password");
+                if (hash != null && !hash.isEmpty()) {
+                    if (!hash.startsWith("$2a$")) {
+                        hash = BCrypt.hashpw(hash, BCrypt.gensalt());
+                        needsSave = true;
+                    }
+                    users.put(username, hash);
                 }
             }
+        }
+        if (users.isEmpty()) {
+            String defaultHash = BCrypt.hashpw("admin123", BCrypt.gensalt());
+            users.put("admin", defaultHash);
+            needsSave = true;
+            getLogger().info("Default admin user created (admin / admin123)");
+        }
+        if (needsSave) {
+            saveUsers(users);
         }
 
         Map<String, String> alerts = new HashMap<>();

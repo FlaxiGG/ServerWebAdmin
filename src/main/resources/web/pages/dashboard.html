@@ -1,0 +1,96 @@
+<!-- Dashboard Header -->
+<header class="header">
+  <h1 id="server-motd">Server Web Admin</h1>
+  <p class="sub">Minecraft Server Control Panel</p>
+</header>
+
+<main class="cards">
+  <!-- Status Card -->
+  <div class="card">
+    <div class="card-header">
+      <span class="dot dot-green" aria-hidden="true"></span>
+      <h2>Server Status</h2>
+    </div>
+    <div class="stat-row">
+      <div class="stat-item">
+        <div class="stat-label">Status</div>
+        <div class="stat-value" style="font-size:1.125rem;color:#8cbfa8;">Online</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Players</div>
+        <div class="stat-value" id="online">0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Performance Card -->
+  <div class="card">
+    <div class="card-header">
+      <span class="dot dot-blue" aria-hidden="true"></span>
+      <h2>Server Performance</h2>
+    </div>
+    <div class="stat-label">RAM Usage</div>
+    <div class="stat-value" style="font-size:1.125rem;"><span id="ram">0 / 0 MB</span></div>
+    <div style="margin-top:0.75rem;">
+      <div class="stat-label">Uptime</div>
+      <div class="stat-value" style="font-size:1.125rem;" id="uptime">0s</div>
+    </div>
+  </div>
+
+  <!-- TPS Card -->
+  <div class="card">
+    <div class="card-header">
+      <span class="dot dot-purple" aria-hidden="true"></span>
+      <h2>Server TPS</h2>
+    </div>
+    <div class="stat-label">Ticks Per Second</div>
+    <div class="stat-value" id="tps">20.0</div>
+  </div>
+
+  <!-- Server Control Card -->
+  <div class="card card-full">
+    <div class="card-header">
+      <span class="dot dot-amber" aria-hidden="true"></span>
+      <h2>Server Control</h2>
+    </div>
+    <div class="ctrl-row">
+      <span style="font-size:0.8125rem;color:#8a847c;flex:1;min-width:140px;">Control: Save, Reload Server, Stop Server</span>
+      <button class="btn btn-save" onclick="saveServer()">Save</button>
+      <button class="btn btn-restart" onclick="reloadServer()">Reload</button>
+      <button class="btn btn-stop" onclick="stopServer()">Stop</button>
+    </div>
+    <div class="ctrl-row">
+      <span style="font-size:0.8125rem;color:#8a847c;flex:1;min-width:140px;">Weather: Clear, Rain, Thunder</span>
+      <button class="btn" style="background:#a8d4e8;color:#3a5c5c;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="weatherClear()">Clear</button>
+      <button class="btn" style="background:#c4d4e8;color:#3a4a5c;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="weatherRain()">Rain</button>
+      <button class="btn" style="background:#e8d4e8;color:#5c3a4a;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="weatherThunder()">Thunder</button>
+    </div>
+    <div class="ctrl-row">
+      <span style="font-size:0.8125rem;color:#8a847c;flex:1;min-width:140px;">Time: Day, Noon, Night, Midnight</span>
+      <button class="btn" style="background:#faf0d4;color:#6b5e30;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="timeDay()">Day</button>
+      <button class="btn" style="background:#fae8d4;color:#6b4e30;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="timeNoon()">Noon</button>
+      <button class="btn" style="background:#d4d4e8;color:#3a3a5c;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="timeNight()">Night</button>
+      <button class="btn" style="background:#d4d4e8;color:#2a2a4c;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="timeMidnight()">Midnight</button>
+    </div>
+  </div>
+
+  <!-- Online Players Card -->
+  <div class="card card-full">
+    <div class="card-header">
+      <span class="dot dot-green" aria-hidden="true"></span>
+      <h2>Online Players</h2>
+      <span id="player-count" style="font-size:0.8rem;color:#8a847c;"></span>
+    </div>
+    <div id="players"></div>
+  </div>
+
+  <!-- Console Output Card -->
+  <div class="card card-full">
+    <div class="card-header">
+      <span class="dot dot-blue" aria-hidden="true"></span>
+      <h2>Console Output</h2>
+      <span style="font-size:0.7rem;color:#8a847c;">last 15 lines</span>
+    </div>
+    <pre id="console-dash" class="console" style="max-height:200px;">Loading…</pre>
+  </div>
+</main>

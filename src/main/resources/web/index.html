@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f4efe9">
+  <meta name="color-scheme" content="light">
+  <title>Server Web Admin</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <!-- Login Page -->
+  <div id="login-page" class="login-bg">
+    <div class="login-brand">
+      <div class="login-icon" aria-hidden="true"></div>
+      <h1>Server Web Admin</h1>
+      <p>Minecraft Server Control Panel</p>
+    </div>
+    <div class="login-card">
+      <div class="input-group">
+        <div>
+          <div class="field-label">Username</div>
+          <input id="login-username" class="input" type="text" autocomplete="off" spellcheck="false"
+            placeholder="Enter your username…" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()" style="width:100%">
+        </div>
+        <div>
+          <div class="field-label">Password</div>
+          <input id="login-password" class="input" type="password" autocomplete="off" spellcheck="false"
+            placeholder="Enter your password…" onkeydown="if(event.key==='Enter')doLogin()" style="width:100%">
+        </div>
+        <button class="btn btn-primary" onclick="doLogin()" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.875rem;margin-top:0.25rem;">Sign In</button>
+      </div>
+      <div id="login-error" style="display:none;color:#e49494;font-size:0.75rem;margin-top:0.875rem;text-align:center;"></div>
+    </div>
+    <div class="login-footer">Server Web Admin &copy; 2026</div>
+  </div>
+
+  <!-- App Container -->
+  <div id="app-container" style="display:none;">
+    <div class="app">
+      <!-- Sidebar -->
+      <nav class="sidebar">
+        <div class="sidebar-brand">
+          <span class="sidebar-brand-icon" aria-hidden="true"></span>
+          <span>Server Web Admin</span>
+        </div>
+        <button class="nav-btn active" data-page="dashboard" style="--nav-accent:#8cbfa8" onclick="switchPage('dashboard')">
+          <span class="nav-dot" style="background:#8cbfa8"></span><span class="nav-label">Dashboard</span>
+        </button>
+        <button class="nav-btn" data-page="console" style="--nav-accent:#8baec2" onclick="switchPage('console')">
+          <span class="nav-dot" style="background:#8baec2"></span><span class="nav-label">Console</span>
+        </button>
+        <button class="nav-btn" data-page="bans" style="--nav-accent:#e49494" onclick="switchPage('bans')">
+          <span class="nav-dot" style="background:#e49494"></span><span class="nav-label">Bans</span>
+        </button>
+        <button class="nav-btn" data-page="whitelist" style="--nav-accent:#dbbc7c" onclick="switchPage('whitelist')">
+          <span class="nav-dot" style="background:#dbbc7c"></span><span class="nav-label">Whitelist</span>
+        </button>
+        <button class="nav-btn" data-page="users" style="--nav-accent:#a89ec4" onclick="switchPage('users')">
+          <span class="nav-dot" style="background:#a89ec4"></span><span class="nav-label">Users</span>
+        </button>
+        <div style="margin-top:auto;">
+          <div class="theme-toggle">
+            <span class="theme-toggle-label">Dark mode</span>
+            <button class="theme-sw" onclick="toggleTheme()" aria-label="Toggle dark mode"></button>
+          </div>
+          <button class="nav-btn" onclick="doLogout()" style="color:var(--text-muted);">
+            <span class="nav-label">Logout</span>
+          </button>
+        </div>
+      </nav>
+
+      <!-- Main Content -->
+      <div class="main-area">
+        <section id="page-dashboard" class="page active"></section>
+        <section id="page-console" class="page"></section>
+        <section id="page-bans" class="page"></section>
+        <section id="page-whitelist" class="page"></section>
+        <section id="page-users" class="page"></section>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">Server Web Admin &copy; 2026</footer>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- Teleport Modal -->
+  <div id="tp-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="tp-modal-title">
+    <div class="modal">
+      <h3 id="tp-modal-title">Teleport Player</h3>
+      <p id="tp-modal-desc"></p>
+      <label for="tp-target" class="sr-only">Target player name</label>
+      <input id="tp-target" class="input" type="text" autocomplete="off" spellcheck="false" placeholder="Enter target player name…" style="width:100%">
+      <div class="modal-actions">
+        <button class="btn" style="background:var(--modal-cancel-bg);color:var(--text);" onclick="closeTeleportModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="doTeleport()">Teleport</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Go To Modal -->
+  <div id="goto-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="goto-modal-title">
+    <div class="modal">
+      <h3 id="goto-modal-title">Go To Player</h3>
+      <p id="goto-modal-desc"></p>
+      <label for="goto-admin" class="sr-only">Your player name</label>
+      <input id="goto-admin" class="input" type="text" autocomplete="off" spellcheck="false" placeholder="Enter your player name…" style="width:100%">
+      <div class="modal-actions">
+        <button class="btn" style="background:var(--modal-cancel-bg);color:var(--text);" onclick="closeGoToModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="doGoTo()">Go To</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Change Password Modal -->
+  <div id="changepw-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="changepw-modal-title">
+    <div class="modal">
+      <h3 id="changepw-modal-title">Change Password</h3>
+      <p style="font-size:0.8125rem;color:#e49494;margin-bottom:1rem;">You are using the default password. Please change it now.</p>
+      <div style="display:flex;flex-direction:column;gap:0.75rem;">
+        <label for="changepw-old" class="sr-only">Current Password</label>
+        <input id="changepw-old" class="input" type="password" autocomplete="off" spellcheck="false" placeholder="Current password…" style="width:100%">
+        <label for="changepw-new" class="sr-only">New Password</label>
+        <input id="changepw-new" class="input" type="password" autocomplete="off" spellcheck="false" placeholder="New password…" style="width:100%">
+        <label for="changepw-confirm" class="sr-only">Confirm New Password</label>
+        <input id="changepw-confirm" class="input" type="password" autocomplete="off" spellcheck="false" placeholder="Confirm new password…" onkeydown="if(event.key==='Enter')doChangePassword()" style="width:100%">
+      </div>
+      <div id="changepw-error" style="display:none;color:#e49494;font-size:0.75rem;margin-top:0.75rem;"></div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" onclick="doChangePassword()" style="width:100%;justify-content:center;">Change Password</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
