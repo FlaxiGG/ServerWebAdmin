@@ -262,9 +262,23 @@ Patreon available for supporters.
 
 ## License
 
-Open source project.
+MinePanel is licensed under **GNU GPL v3**.
 
-License information coming soon.
+You are free to:
+
+* Use the plugin for personal or commercial servers
+* Modify the source code
+* Fork the project
+* Redistribute modified versions
+
+Requirements:
+
+* Modified versions must remain open source
+* Modified versions must also use GPL v3 license
+* Source code must remain publicly available when redistributed
+
+Please respect the project and support original development.
+
 
 ---
 
