@@ -1,3 +1,11 @@
+/*
+ * MinePanel
+ * Copyright (C) 2026 FlaxiLabs
+ *
+ * Licensed under GNU GPL v3
+ * https://www.gnu.org/licenses/gpl-3.0.html
+ */
+
 package me.flaxi.serverwebadmin;
 
 import org.bukkit.BanList;
