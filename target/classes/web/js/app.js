@@ -4,22 +4,23 @@ var heartbeatTimer=null;
   if(localStorage.getItem('theme')==='dark'){
     document.body.classList.add('dark');
   }
+  if(localStorage.getItem('sidebar-collapsed')==='true'){
+    document.body.classList.add('sidebar-collapsed');
+  }
 })();
 (function checkAuthOnLoad(){
   fetch('/api/heartbeat').then(function(r){
     if(r.ok){
       document.getElementById('login-page').style.display='none';
       var ac=document.getElementById('app-container');
-      ac.style.display='flex';ac.style.flexDirection='column';ac.style.minHeight='100vh';
+      ac.classList.add('visible');
       startHeartbeat();
       loadPageContent(currentPage);
     }else{
       document.getElementById('login-page').style.display='flex';
-      document.getElementById('app-container').style.display='none';
     }
   }).catch(function(){
     document.getElementById('login-page').style.display='flex';
-    document.getElementById('app-container').style.display='none';
   });
 })();
 function toggleTheme(){
@@ -29,6 +30,15 @@ function toggleTheme(){
   }else{
     document.body.classList.add('dark');
     localStorage.setItem('theme','dark');
+  }
+}
+function toggleSidebar(){
+  if(document.body.classList.contains('sidebar-collapsed')){
+    document.body.classList.remove('sidebar-collapsed');
+    localStorage.setItem('sidebar-collapsed','false');
+  }else{
+    document.body.classList.add('sidebar-collapsed');
+    localStorage.setItem('sidebar-collapsed','true');
   }
 }
 function startHeartbeat(){
@@ -45,10 +55,51 @@ function heartbeat(){
   }).catch(function(){});
 }
 function showToast(msg){
- var t=document.getElementById('toast');
- t.textContent=msg;t.classList.add('show');
- setTimeout(function(){t.classList.remove('show')},2800)
+  var t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('show');
+  setTimeout(function(){t.classList.remove('show')},2800)
 }
+var confirmAction=null;
+var confirmGetReason=null;
+function showConfirm(title,msg,callback){
+  document.getElementById('confirm-modal-title').textContent=title;
+  document.getElementById('confirm-modal-msg').textContent=msg;
+  document.getElementById('confirm-modal-input-wrap').style.display='none';
+  document.getElementById('confirm-modal-btn').disabled=false;
+  confirmAction=callback;
+  confirmGetReason=null;
+  document.getElementById('confirm-modal').classList.add('show');
+}
+function showConfirmWithReason(title,msg,placeholder,callback){
+  document.getElementById('confirm-modal-title').textContent=title;
+  document.getElementById('confirm-modal-msg').textContent=msg;
+  document.getElementById('confirm-modal-input-wrap').style.display='block';
+  var inp=document.getElementById('confirm-modal-reason');
+  inp.value='';inp.placeholder=placeholder||'Reason\u2026';
+  document.getElementById('confirm-modal-btn').disabled=true;
+  confirmAction=null;
+  confirmGetReason=callback;
+  document.getElementById('confirm-modal').classList.add('show');
+  setTimeout(function(){inp.focus()},200);
+}
+function closeConfirmModal(){
+  document.getElementById('confirm-modal').classList.remove('show');
+  confirmAction=null;confirmGetReason=null;
+}
+function doConfirm(){
+  if(confirmGetReason){
+    var r=document.getElementById('confirm-modal-reason').value.trim();
+    if(!r)return;
+    confirmGetReason(r);confirmGetReason=null;
+  }else if(confirmAction){
+    confirmAction();confirmAction=null;
+  }
+  document.getElementById('confirm-modal').classList.remove('show');
+}
+document.getElementById('confirm-modal-btn').addEventListener('click',doConfirm);
+document.getElementById('confirm-modal').addEventListener('click',function(e){
+  if(e.target===this)closeConfirmModal();
+});
 function doLogin(){
   var u=document.getElementById('login-username').value.trim();
   var p=document.getElementById('login-password').value.trim();
@@ -63,15 +114,13 @@ function doLogin(){
       currentUser=data.username;
       if(data.mustChange){
         document.getElementById('login-page').style.display='none';
-        var ac=document.getElementById('app-container');
-        ac.style.display='flex';ac.style.flexDirection='column';ac.style.minHeight='100vh';
+        document.getElementById('app-container').classList.add('visible');
         startHeartbeat();
         showChangePasswordModal();
         return;
       }
       document.getElementById('login-page').style.display='none';
-      var ac=document.getElementById('app-container');
-      ac.style.display='flex';ac.style.flexDirection='column';ac.style.minHeight='100vh';
+      document.getElementById('app-container').classList.add('visible');
       startHeartbeat();
       loadPageContent('dashboard');
     }else{
@@ -89,15 +138,14 @@ function doLogout(){
   fetch('/api/logout',{method:'POST'});
   currentUser='';
   document.getElementById('login-page').style.display='flex';
-  document.getElementById('app-container').style.display='none';
+  document.getElementById('app-container').classList.remove('visible');
   document.getElementById('login-username').value='';
   document.getElementById('login-password').value='';
   clearPageTimers();
 }
 function showChangePasswordModal(){
   document.getElementById('login-page').style.display='none';
-  var ac=document.getElementById('app-container');
-  ac.style.display='flex';ac.style.flexDirection='column';ac.style.minHeight='100vh';
+  document.getElementById('app-container').classList.add('visible');
   startHeartbeat();
   document.getElementById('changepw-modal').classList.add('show');
 }
@@ -122,19 +170,20 @@ function doChangePassword(){
 var currentPage='dashboard';
 var pageTimers={};
 function loadPageContent(page){
- fetch('/pages/'+page+'.html')
- .then(function(r){return r.text()})
- .then(function(html){
-   document.querySelectorAll('.page.active').forEach(function(p){p.classList.remove('active')});
-   var target=document.getElementById('page-'+page);
-   if(target){target.innerHTML=html;target.classList.add('active');}
-   currentPage=page;location.hash=page;clearPageTimers();
-   if(page==='dashboard'){loadPlayers();loadServerInfo();loadConsoleDash();pageTimers.p=setInterval(loadPlayers,5000);pageTimers.s=setInterval(loadServerInfo,5000);pageTimers.d=setInterval(loadConsoleDash,5000);}
-   if(page==='console'){loadConsole();pageTimers.c=setInterval(loadConsole,3000);}
-   if(page==='bans')loadBans();
-   if(page==='whitelist')loadWhitelist();
-   if(page==='users')loadUsers();
- });
+  fetch('/pages/'+page+'.html')
+  .then(function(r){return r.text()})
+  .then(function(html){
+    document.querySelectorAll('.page.active').forEach(function(p){p.classList.remove('active')});
+    var target=document.getElementById('page-'+page);
+    if(target){target.innerHTML=html;target.classList.add('active');}
+    currentPage=page;location.hash=page;clearPageTimers();
+    if(page==='dashboard'){loadPlayers();loadServerInfo();loadConsoleDash();pageTimers.p=setInterval(loadPlayers,5000);pageTimers.s=setInterval(loadServerInfo,5000);pageTimers.d=setInterval(loadConsoleDash,5000);}
+    if(page==='console'){loadConsole();pageTimers.c=setInterval(loadConsole,3000);}
+    if(page==='players'){loadPlayers();pageTimers.p=setInterval(loadPlayers,5000);}
+    if(page==='bans'){loadBans();pageTimers.b=setInterval(loadBans,10000);}
+    if(page==='whitelist')loadWhitelist();
+    if(page==='users'){loadUsers();pageTimers.u=setInterval(loadUsers,30000);}
+  });
 }
 function switchPage(page){
  document.querySelectorAll('.nav-btn.active').forEach(function(b){b.classList.remove('active')});
@@ -142,7 +191,7 @@ function switchPage(page){
  loadPageContent(page);
 }
 var hash=location.hash.replace('#','');
-if(hash&&['dashboard','console','bans','whitelist','users'].indexOf(hash)!==-1){
+if(hash&&['dashboard','console','players','bans','whitelist','users'].indexOf(hash)!==-1){
  currentPage=hash;
  document.querySelector('.nav-btn.active').classList.remove('active');
  document.querySelector('.nav-btn[data-page=\"'+hash+'\"]').classList.add('active');
@@ -151,45 +200,47 @@ function clearPageTimers(){
  for(var k in pageTimers){clearInterval(pageTimers[k]);}pageTimers={};
 }
 function loadPlayers(){
- fetch('/api/players')
- .then(function(r){return r.json()})
- .then(function(data){
-   if(data.success===false){
-     document.getElementById('players').innerHTML='<div class=\"empty\">Invalid or missing token. Please set your admin token.</div>';
-     document.getElementById('player-count').textContent='';
-     return;
-   }
-   document.getElementById('online').textContent=data.online;
-   document.getElementById('player-count').textContent=data.online+' online';
-   var html='';
-   data.players.forEach(function(p){
-     var hpPct=Math.round(p.health*5);var hpC=hpPct>60?'#8cbfa8':hpPct>25?'#dbbc7c':'#e49494';
-     html+='<div class=\"player-row\">'+
-       '<div class=\"player-info\">'+
-         '<span class=\"player-name\">'+p.name+'</span>'+
-         '<div class=\"player-meta\">'+
-           '<span class=\"player-coords\">XYZ: '+p.x+' / '+p.y+' / '+p.z+'</span>'+
-           '<span class=\"player-gm\">'+p.gamemode+'</span>'+
-           '<span>HP <span class=\"hp-bar\"><span class=\"hp-fill\" style=\"width:'+hpPct+'%;background:'+hpC+'\"></span></span> '+p.health+'</span>'+
-         '</div>'+
-       '</div>'+
-     '</div>'+
-     '<div style=\"display:flex;gap:0.375rem;flex-wrap:wrap;margin-top:0.5rem;align-items:center;\">'+
-       '<select class=\"gm-select\" onchange=\"playerAction(\''+p.name+'\',\'gamemode \'+this.value)\"><option value=\"\">GM...</option><option value=\"survival\">Survival</option><option value=\"creative\">Creative</option><option value=\"adventure\">Adventure</option><option value=\"spectator\">Spectator</option></select>'+
-       '<button class=\"btn\" style=\"background:#c4e8d4;color:#3a5c4a;font-size:0.6875rem;padding:0.25rem 0.5rem;\" onclick=\"playerAction(\''+p.name+'\',\'heal\')\">Heal</button>'+
-       '<button class=\"btn\" style=\"background:#d4dce8;color:#3a4a5c;font-size:0.6875rem;padding:0.25rem 0.5rem;\" onclick=\"playerAction(\''+p.name+'\',\'feed\')\">Feed</button>'+
-       '<button class=\"btn\" style=\"background:#e8d4e0;color:#5c3a4a;font-size:0.6875rem;padding:0.25rem 0.5rem;\" onclick=\"playerAction(\''+p.name+'\',\'kill\')\">Kill</button>'+
-       '<span style=\"color:#e5ded5;margin:0 0.25rem;font-size:0.75rem;\">|</span>'+
-       '<button class=\"btn btn-goto\" onclick=\"showGoToModal(\''+p.name+'\')\">Go To</button>'+
-       '<button class=\"btn btn-tp\" onclick=\"showTeleportModal(\''+p.name+'\')\">Teleport To</button>'+
-       '<button class=\"btn btn-kick\" onclick=\"kickPlayer(\''+p.name+'\')\">Kick</button>'+
-       '<button class=\"btn btn-ban\" onclick=\"banPlayer(\''+p.name+'\')\">Ban</button>'+
-     '</div>';
-   });
-   document.getElementById('players').innerHTML=html||'<div class=\"empty\">No players online</div>';
- }).catch(function(){
-   document.getElementById('players').innerHTML='<div class=\"empty\">Unable to load players. Check your token and connection.</div>';
- });
+  fetch('/api/players')
+  .then(function(r){return r.json()})
+  .then(function(data){
+    if(data.success===false){
+      var p=document.getElementById('players');if(p)p.innerHTML='<div class=\"empty\">Invalid or missing token.</div>';
+      var pc=document.getElementById('player-count');if(pc)pc.textContent='';
+      return;
+    }
+    var on=document.getElementById('online');if(on)on.textContent=data.online;
+    var pc=document.getElementById('player-count');if(pc)pc.textContent=data.online+' online';
+    var p=document.getElementById('players');
+    if(!p)return;
+    var html='';
+    data.players.forEach(function(p){
+      var hpPct=Math.round(p.health*5);var hpC=hpPct>60?'#8cbfa8':hpPct>25?'#dbbc7c':'#e49494';
+      html+='<div class=\"player-row\">'+
+        '<div class=\"player-info\">'+
+          '<span class=\"player-name\">'+p.name+'</span>'+
+          '<div class=\"player-meta\">'+
+            '<span class=\"player-coords\">XYZ: '+p.x+' / '+p.y+' / '+p.z+'</span>'+
+            '<span class=\"player-gm\">'+p.gamemode+'</span>'+
+            '<span>HP <span class=\"hp-bar\"><span class=\"hp-fill\" style=\"width:'+hpPct+'%;background:'+hpC+'\"></span></span> '+p.health+'</span>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+      '<div style=\"display:flex;gap:0.375rem;flex-wrap:wrap;margin-top:0.5rem;align-items:center;\">'+
+        '<select class=\"gm-select\" onchange=\"playerAction(\''+p.name+'\',\'gamemode \'+this.value)\"><option value=\"\">GM...</option><option value=\"survival\">Survival</option><option value=\"creative\">Creative</option><option value=\"adventure\">Adventure</option><option value=\"spectator\">Spectator</option></select>'+
+        '<button class=\"btn btn-sm btn-accent-green\" onclick=\"playerAction(\''+p.name+'\',\'heal\')\">Heal</button>'+
+        '<button class=\"btn btn-sm btn-accent-blue\" onclick=\"playerAction(\''+p.name+'\',\'feed\')\">Feed</button>'+
+        '<button class=\"btn btn-sm btn-accent-pink\" onclick=\"playerAction(\''+p.name+'\',\'kill\')\">Kill</button>'+
+        '<span class=\"divider\"></span>'+
+        '<button class=\"btn btn-goto\" onclick=\"showGoToModal(\''+p.name+'\')\">Go To</button>'+
+        '<button class=\"btn btn-tp\" onclick=\"showTeleportModal(\''+p.name+'\')\">Teleport To</button>'+
+        '<button class=\"btn btn-kick\" onclick=\"kickPlayer(\''+p.name+'\')\">Kick</button>'+
+        '<button class=\"btn btn-ban\" onclick=\"banPlayer(\''+p.name+'\')\">Ban</button>'+
+      '</div>';
+    });
+    p.innerHTML=html||'<div class=\"empty\">No players online</div>';
+  }).catch(function(){
+    var p=document.getElementById('players');if(p)p.innerHTML='<div class=\"empty\">Unable to load players.</div>';
+  });
 }
 function playerAction(player,action){
  fetch('/api/player-action?player='+encodeURIComponent(player)+'&action='+encodeURIComponent(action),{method:'POST'})
@@ -208,7 +259,7 @@ function loadConsole(){
  .then(function(r){return r.json()})
  .then(function(data){
    var el=document.getElementById('console-full');
-   if(el)el.textContent=data.lines?data.lines.join('\n'):'No output';
+    if(el)el.textContent=data.lines&&data.lines.length?data.lines.join('\n'):'No output';
    var cnt=document.getElementById('console-line-count');
    if(cnt)cnt.textContent=data.totalLines?data.totalLines+' lines':'';
  }).catch(function(){});
@@ -218,7 +269,7 @@ function loadConsoleDash(){
  .then(function(r){return r.json()})
  .then(function(data){
    var el=document.getElementById('console-dash');
-   if(el)el.textContent=data.lines?data.lines.join('\n'):'No output';
+    if(el)el.textContent=data.lines&&data.lines.length?data.lines.join('\n'):'No output';
  }).catch(function(){});
 }
 function loadBans(){
@@ -232,7 +283,7 @@ function loadBans(){
      html+='<table class=\"tbl\"><thead><tr><th>Player</th><th>Reason</th><th>Source</th><th></th></tr></thead><tbody>';
      data.forEach(function(b){
        html+='<tr><td>'+b.name+'</td><td>'+b.reason+'</td><td>'+b.source+'</td>';
-       html+='<td><button class=\"btn\" style=\"background:#ecc8c8;color:#6b3a3a;font-size:0.6875rem;padding:0.25rem 0.625rem;\" onclick=\"unbanPlayer(\''+b.name+'\')\">Unban</button></td></tr>';
+        html+='<td><button class=\"btn btn-sm btn-accent-red\" onclick=\"unbanPlayer(\''+b.name+'\')\">Unban</button></td></tr>';
      });
      html+='</tbody></table>';
    }
@@ -240,10 +291,11 @@ function loadBans(){
  }).catch(function(){});
 }
 function unbanPlayer(name){
- if(!confirm('Unban '+name+'?'))return;
- fetch('/api/unban?player='+encodeURIComponent(name),{method:'POST'})
- .then(function(r){return r.json()})
- .then(function(data){showToast(data.message);loadBans();});
+  showConfirm('Unban Player','Are you sure you want to unban '+name+'?',function(){
+    fetch('/api/unban?player='+encodeURIComponent(name),{method:'POST'})
+    .then(function(r){return r.json()})
+    .then(function(data){showToast(data.message);loadBans();});
+  });
 }
 function loadWhitelist(){
   fetch('/api/whitelist')
@@ -258,8 +310,8 @@ function loadWhitelist(){
    else{
      html+='<table class=\"tbl\"><thead><tr><th>Player</th><th>UUID</th><th></th></tr></thead><tbody>';
      data.players.forEach(function(p){
-       html+='<tr><td>'+p.name+'</td><td style=\"font-size:0.6875rem;color:#8a847c;\">'+p.uuid+'</td>';
-       html+='<td><button class=\"btn\" style=\"background:#ecc8c8;color:#6b3a3a;font-size:0.6875rem;padding:0.25rem 0.625rem;\" onclick=\"removeWhitelist(\''+p.name+'\')\">Remove</button></td></tr>';
+        html+='<tr><td>'+p.name+'</td><td style=\"font-size:0.6875rem;color:var(--text-muted);\">'+p.uuid+'</td>';
+        html+='<td><button class=\"btn btn-sm btn-accent-red\" onclick=\"removeWhitelist(\''+p.name+'\')\">Remove</button></td></tr>';
      });
      html+='</tbody></table>';
    }
@@ -279,22 +331,25 @@ function addWhitelist(){
  .then(function(data){showToast(data.message);document.getElementById('wl-add-input').value='';loadWhitelist();});
 }
 function removeWhitelist(name){
- if(!confirm('Remove '+name+' from whitelist?'))return;
- fetch('/api/whitelist/remove?player='+encodeURIComponent(name),{method:'POST'})
- .then(function(r){return r.json()})
- .then(function(data){showToast(data.message);loadWhitelist();});
+  showConfirm('Remove from Whitelist','Are you sure you want to remove '+name+' from the whitelist?',function(){
+    fetch('/api/whitelist/remove?player='+encodeURIComponent(name),{method:'POST'})
+    .then(function(r){return r.json()})
+    .then(function(data){showToast(data.message);loadWhitelist();});
+  });
 }
 function kickPlayer(player){
- if(!confirm('Kick '+player+'?')) return;
- fetch('/api/kick?player='+encodeURIComponent(player),{method:'POST'})
- .then(function(r){return r.json()})
- .then(function(data){showToast(data.message);loadPlayers();});
+  showConfirmWithReason('Kick Player','Are you sure you want to kick '+player+'?','Reason for kick\u2026',function(reason){
+    fetch('/api/kick?player='+encodeURIComponent(player)+'&reason='+encodeURIComponent(reason),{method:'POST'})
+    .then(function(r){return r.json()})
+    .then(function(data){showToast(data.message);loadPlayers();});
+  });
 }
 function banPlayer(player){
- if(!confirm('Ban '+player+'?')) return;
- fetch('/api/ban?player='+encodeURIComponent(player),{method:'POST'})
- .then(function(r){return r.json()})
- .then(function(data){showToast(data.message);loadPlayers();});
+  showConfirmWithReason('Ban Player','Are you sure you want to ban '+player+'? They will be kicked from the server.','Reason for ban\u2026',function(reason){
+    fetch('/api/ban?player='+encodeURIComponent(player)+'&reason='+encodeURIComponent(reason),{method:'POST'})
+    .then(function(r){return r.json()})
+    .then(function(data){showToast(data.message);loadPlayers();});
+  });
 }
 function saveServer(){
  showToast('Saving world\u2026');
@@ -303,18 +358,20 @@ function saveServer(){
  .then(function(data){showToast(data.message);});
 }
 function reloadServer(){
- if(!confirm('Are you sure you want to reload the server?')) return;
- showToast('Reloading server\u2026');
- fetch('/api/reload',{method:'POST'})
- .then(function(r){return r.json()})
- .then(function(data){showToast(data.message);});
+  showConfirm('Reload Server','Are you sure you want to reload the server?',function(){
+    showToast('Reloading server\u2026');
+    fetch('/api/reload',{method:'POST'})
+  .then(function(r){return r.json()})
+  .then(function(data){showToast(data.message);});
+  });
 }
 function stopServer(){
- if(!confirm('Stop the server? The world will be saved automatically before shutdown. All players will be disconnected.')) return;
- showToast('Saving world then stopping\u2026');
- fetch('/api/stop',{method:'POST'})
- .then(function(r){return r.json()})
- .then(function(data){showToast(data.message);});
+  showConfirm('Stop Server','The world will be saved automatically before shutdown. All players will be disconnected.',function(){
+    showToast('Saving world then stopping\u2026');
+    fetch('/api/stop',{method:'POST'})
+    .then(function(r){return r.json()})
+    .then(function(data){showToast(data.message);});
+  });
 }
 function weatherClear(){
  showToast('Weather Clear\u2026');
@@ -408,16 +465,24 @@ document.addEventListener('keydown',function(e){
 });
 function loadServerInfo(){
   fetch('/api/server')
- .then(function(r){return r.json()})
- .then(function(data){
-   if(data.success===false)return;
-   document.getElementById('ram').textContent=data.ramUsed+' / '+data.ramMax+' MB';
-   document.getElementById('uptime').textContent=formatUptime(data.uptimeSeconds);
-   if(data.motd) document.getElementById('server-motd').textContent=data.motd;
-   var tps=document.getElementById('tps');
-   tps.textContent=data.tps;
-   tps.style.color=data.tps>=18?'#8cbfa8':data.tps>=13?'#dbbc7c':'#e49494';
- }).catch(function(){});
+  .then(function(r){return r.json()})
+  .then(function(data){
+    if(data.success===false)return;
+    if(data.motd) document.getElementById('server-motd').textContent=data.motd;
+    if(data.mcVersion) document.getElementById('server-version').textContent=data.mcVersion;
+    if(data.os) document.getElementById('sys-os').textContent=data.os;
+    document.getElementById('uptime').textContent=formatUptime(data.uptimeSeconds);
+    document.getElementById('ram-value').textContent=data.ramUsed;
+    document.getElementById('ram-max').textContent=' / '+data.ramMax+' MB';
+    var ramPct=Math.round(data.ramUsed/data.ramMax*100);
+    document.getElementById('ram-fill').style.width=ramPct+'%';
+    var cpu=document.getElementById('cpu');
+    cpu.textContent=data.cpu;
+    cpu.style.color=data.cpu!=='N/A'?(parseFloat(data.cpu)>70?'#e49494':parseFloat(data.cpu)>40?'#dbbc7c':'#8cbfa8'):'var(--text-heading)';
+    var tps=document.getElementById('tps');
+    tps.textContent=data.tps;
+    tps.style.color=data.tps>=18?'#8cbfa8':data.tps>=13?'#dbbc7c':'#e49494';
+  }).catch(function(){});
 }
 function formatUptime(seconds){
  var h=Math.floor(seconds/3600);
@@ -436,9 +501,9 @@ function loadUsers(){
      html+='<table class=\"tbl\"><thead><tr><th>Username</th><th></th></tr></thead><tbody>';
      data.forEach(function(u){
        html+='<tr><td>'+u.username+'</td>';
-       html+='<td style=\"display:flex;gap:0.375rem;\">';
-       html+='<button class=\"btn\" style=\"background:#d4dce8;color:#3a4a5c;font-size:0.6875rem;padding:0.25rem 0.5rem;\" onclick=\"showChangePassword(\''+u.username+'\')\">Password</button>';
-       html+='<button class=\"btn\" style=\"background:#ecc8c8;color:#6b3a3a;font-size:0.6875rem;padding:0.25rem 0.5rem;\" onclick=\"removeUser(\''+u.username+'\')\">Remove</button>';
+        html+='<td style=\"display:flex;gap:0.375rem;\">';
+        html+='<button class=\"btn btn-sm btn-accent-blue\" onclick=\"showChangePassword(\''+u.username+'\')\">Password</button>';
+        html+='<button class=\"btn btn-sm btn-accent-red\" onclick=\"removeUser(\''+u.username+'\')\">Remove</button>';
        html+='</td></tr>';
      });
      html+='</tbody></table>';
@@ -460,10 +525,11 @@ function addUser(){
  });
 }
 function removeUser(name){
- if(!confirm('Remove user '+name+'?'))return;
-  fetch('/api/users/remove?username='+encodeURIComponent(name),{method:'POST'})
- .then(function(r){return r.json()})
- .then(function(data){showToast(data.message);loadUsers();});
+  showConfirm('Remove User','Are you sure you want to remove user '+name+'?',function(){
+    fetch('/api/users/remove?username='+encodeURIComponent(name),{method:'POST'})
+    .then(function(r){return r.json()})
+    .then(function(data){showToast(data.message);loadUsers();});
+  });
 }
 function showChangePassword(name){
  var p=prompt('Enter new password for '+name+':');

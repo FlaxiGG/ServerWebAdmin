@@ -1,6 +1,41 @@
+# =====================================================================
+# ServerWebAdmin — Configuration
+# =====================================================================
+
 web:
+  # Host address to bind the web server to.
+  # Use "0.0.0.0" to listen on all network interfaces (default).
+  # Use "127.0.0.1" or "localhost" to accept local connections only.
+  # This is overridden when allow-external is set to false (forces 127.0.0.1).
+  host: 0.0.0.0
+
+  # TCP port for the web server.
+  # Default: 8080. Change to any available port (e.g., 9000).
+  # If the port is already in use, the plugin logs a warning and continues
+  # without crashing the server.
   port: 8080
+
+  # Session timeout in minutes. After this period of inactivity,
+  # the session expires and the user must login again.
+  # Minimum: 1 minute. Default: 5 minutes.
+  session-timeout: 5
+
+  # Controls external (public) network access.
+  # When true (default): binds to the host address configured above.
+  # When false: forces binding to 127.0.0.1 only — useful when you
+  #   want the web UI accessible only from the Minecraft server console
+  #   or via a local reverse proxy (Nginx, Apache, etc.).
+  allow-external: true
+
+# =====================================================================
+# Alert messages shown to players when they are kicked or banned.
+# =====================================================================
 alerts:
+  # Message displayed when a player is kicked via the web admin panel.
   kick: "You have been kicked by Web Admin."
+
+  # Ban reason logged in the server ban list.
   ban_reason: "Banned by Web Admin"
+
+  # Kick message shown to the player when they are banned.
   ban_kick: "You have been banned by Web Admin."

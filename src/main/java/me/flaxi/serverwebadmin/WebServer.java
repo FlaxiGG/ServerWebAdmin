@@ -21,6 +21,7 @@ public class WebServer extends NanoHTTPD {
     private final ActionLogger actionLogger;
     private final TpsMonitor tpsMonitor;
     private final Map<String, SessionInfo> sessions = new HashMap<>();
+    private final long sessionTimeoutMs;
 
     private static class SessionInfo {
         final String username;
@@ -31,12 +32,14 @@ public class WebServer extends NanoHTTPD {
         }
     }
 
-    public WebServer(ServerWebAdmin plugin, int port, Map<String, String> users, Map<String, String> alerts, TpsMonitor tpsMonitor) throws IOException {
-        super(port);
+    public WebServer(ServerWebAdmin plugin, String hostname, int port, int sessionTimeoutMin,
+                     Map<String, String> users, Map<String, String> alerts, TpsMonitor tpsMonitor) throws IOException {
+        super(hostname, port);
         this.plugin = plugin;
         this.users = users;
         this.alerts = alerts;
         this.tpsMonitor = tpsMonitor;
+        this.sessionTimeoutMs = sessionTimeoutMin * 60_000L;
         this.actionLogger = new ActionLogger(plugin);
         start(SOCKET_READ_TIMEOUT, false);
     }
@@ -61,12 +64,12 @@ public class WebServer extends NanoHTTPD {
                 sessions.values().removeIf(s -> s.username.equals(username));
 
                 String sessionToken = UUID.randomUUID().toString();
-                sessions.put(sessionToken, new SessionInfo(username, System.currentTimeMillis() + 300_000));
+                sessions.put(sessionToken, new SessionInfo(username, System.currentTimeMillis() + sessionTimeoutMs));
 
                 boolean mustChange = BCrypt.checkpw("admin123", storedHash);
                 Response resp = newFixedLengthResponse(Response.Status.OK, "application/json",
                         "{\"success\":true,\"token\":\"" + sessionToken + "\",\"username\":\"" + username + "\",\"mustChange\":" + mustChange + "}");
-                resp.addHeader("Set-Cookie", "token=" + sessionToken + "; HttpOnly; Path=/; SameSite=Lax; Max-Age=300");
+                resp.addHeader("Set-Cookie", "token=" + sessionToken + "; HttpOnly; Path=/; SameSite=Lax; Max-Age=" + (sessionTimeoutMs / 1000));
                 return resp;
             }
             return json("{\"success\":false,\"message\":\"Invalid username or password\"}");
@@ -243,13 +246,15 @@ public class WebServer extends NanoHTTPD {
             }
             Map<String, String> params = session.getParms();
             final String playerName = params.get("player");
+            final String reason = params.get("reason");
 
             if (playerName == null || playerName.isEmpty()) {
                 return json("{\"success\":false,\"message\":\"Missing player parameter\"}");
             }
 
             final String ip = getClientIp(session);
-            actionLogger.write("KICK", playerName, ip);
+            final String kickMsg = (reason != null && !reason.isEmpty()) ? reason : alerts.get("kick");
+            actionLogger.write("KICK", playerName + " (" + kickMsg + ")", ip);
 
             Bukkit.getScheduler().runTask(plugin, new Runnable() {
                 @Override
@@ -257,7 +262,7 @@ public class WebServer extends NanoHTTPD {
                     Player target = Bukkit.getPlayer(playerName);
 
                     if (target != null) {
-                        target.kickPlayer(alerts.get("kick"));
+                        target.kickPlayer(kickMsg);
                     }
                 }
             });
@@ -271,20 +276,23 @@ public class WebServer extends NanoHTTPD {
             }
             Map<String, String> params = session.getParms();
             final String playerName = params.get("player");
+            final String reason = params.get("reason");
 
             if (playerName == null || playerName.isEmpty()) {
                 return json("{\"success\":false,\"message\":\"Missing player parameter\"}");
             }
 
             final String ip = getClientIp(session);
-            actionLogger.write("BAN", playerName, ip);
+            final String banReason = (reason != null && !reason.isEmpty()) ? reason : alerts.get("ban_reason");
+            final String kickMsg = (reason != null && !reason.isEmpty()) ? reason : alerts.get("ban_kick");
+            actionLogger.write("BAN", playerName + " (" + banReason + ")", ip);
 
             Bukkit.getScheduler().runTask(plugin, new Runnable() {
                 @Override
                 public void run() {
                     Bukkit.getBanList(BanList.Type.NAME).addBan(
                             playerName,
-                            alerts.get("ban_reason"),
+                            banReason,
                             null,
                             "WebAdmin"
                     );
@@ -292,7 +300,7 @@ public class WebServer extends NanoHTTPD {
                     Player target = Bukkit.getPlayer(playerName);
 
                     if (target != null) {
-                        target.kickPlayer(alerts.get("ban_kick"));
+                        target.kickPlayer(kickMsg);
                     }
                 }
             });
@@ -323,6 +331,11 @@ public class WebServer extends NanoHTTPD {
             motd = motd.replaceAll("&[0-9a-fk-or]", "");
             motd = motd.replace("\\", "\\\\").replace("\"", "\\\"");
 
+            String osName = System.getProperty("os.name");
+            double cpu = getCpuLoad();
+            String cpuStr = cpu < 0 ? "N/A" : String.format("%.1f", cpu) + "%";
+            String mcVersion = Bukkit.getVersion();
+
             String data = "{"
                     + "\"status\":\"online\","
                     + "\"players\":" + Bukkit.getOnlinePlayers().size() + ","
@@ -330,6 +343,9 @@ public class WebServer extends NanoHTTPD {
                     + "\"ramMax\":" + maxMemory + ","
                     + "\"uptimeSeconds\":" + uptimeSeconds + ","
                     + "\"tps\":" + tpsMonitor.getTps() + ","
+                    + "\"cpu\":\"" + cpuStr + "\","
+                    + "\"os\":\"" + escapeJson(osName) + "\","
+                    + "\"mcVersion\":\"" + escapeJson(mcVersion) + "\","
                     + "\"motd\":\"" + motd + "\""
                     + "}";
 
@@ -624,7 +640,7 @@ public class WebServer extends NanoHTTPD {
 
             StringBuilder sb = new StringBuilder();
             try {
-                File logFile = new File("logs/latest.log");
+                File logFile = new File(Bukkit.getWorldContainer().getParentFile(), "logs/latest.log");
                 if (logFile.exists()) {
                     List<String> allLines = new ArrayList<>();
                     BufferedReader reader = new BufferedReader(new FileReader(logFile));
@@ -836,6 +852,18 @@ public class WebServer extends NanoHTTPD {
         );
     }
 
+    private double getCpuLoad() {
+        try {
+            Class<?> clazz = Class.forName("com.sun.management.OperatingSystemMXBean");
+            java.lang.management.OperatingSystemMXBean bean = ManagementFactory.getOperatingSystemMXBean();
+            java.lang.reflect.Method method = clazz.getMethod("getProcessCpuLoad");
+            double load = (double) method.invoke(bean);
+            return load >= 0 ? Math.round(load * 10000.0) / 100.0 : -1;
+        } catch (Exception ignored) {}
+        double alt = ManagementFactory.getOperatingSystemMXBean().getSystemLoadAverage();
+        return alt >= 0 ? Math.round(alt * 100.0) / 100.0 : -1;
+    }
+
     private boolean isAuthorized(IHTTPSession session) {
         String token = getToken(session);
         if (token == null || token.isEmpty()) return false;
@@ -845,17 +873,19 @@ public class WebServer extends NanoHTTPD {
             sessions.remove(token);
             return false;
         }
-        si.expiry = System.currentTimeMillis() + 300_000;
+        si.expiry = System.currentTimeMillis() + sessionTimeoutMs;
         return true;
     }
 
     private String getClientIp(IHTTPSession session) {
+        String forwarded = session.getHeaders().get("x-forwarded-for");
+        if (forwarded != null && !forwarded.isEmpty()) {
+            return forwarded.split(",")[0].trim();
+        }
         String ip = session.getHeaders().get("remote-addr");
-
         if (ip == null || ip.isEmpty()) {
             ip = "unknown";
         }
-
         return ip;
     }
 

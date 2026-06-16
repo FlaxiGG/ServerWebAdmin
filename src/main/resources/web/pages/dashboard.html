@@ -1,96 +1,131 @@
-<!-- Dashboard Header -->
-<header class="header">
-  <h1 id="server-motd">Server Web Admin</h1>
-  <p class="sub">Minecraft Server Control Panel</p>
-</header>
-
-<main class="cards">
-  <!-- Status Card -->
-  <div class="card">
-    <div class="card-header">
-      <span class="dot dot-green" aria-hidden="true"></span>
-      <h2>Server Status</h2>
-    </div>
-    <div class="stat-row">
-      <div class="stat-item">
-        <div class="stat-label">Status</div>
-        <div class="stat-value" style="font-size:1.125rem;color:#8cbfa8;">Online</div>
+<!-- Server Banner Card (full width) -->
+<div class="cards" style="padding-top:1.5rem;">
+  <div class="card card-full banner-card">
+    <div class="banner-content">
+      <div class="banner-left">
+        <div class="banner-status-dot" id="banner-dot"></div>
+        <div>
+          <h1 id="server-motd" class="banner-title">Server Web Admin</h1>
+          <span id="server-version" class="banner-version"></span>
+        </div>
       </div>
-      <div class="stat-item">
-        <div class="stat-label">Players</div>
-        <div class="stat-value" id="online">0</div>
+      <div class="banner-actions">
+        <button class="btn icon-btn icon-btn-save" onclick="saveServer()" title="Save World" aria-label="Save World">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        </button>
+        <button class="btn icon-btn icon-btn-reload" onclick="reloadServer()" title="Reload Server" aria-label="Reload Server">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+        <button class="btn icon-btn icon-btn-stop" onclick="stopServer()" title="Stop Server" aria-label="Stop Server">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        </button>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- Performance Card -->
-  <div class="card">
-    <div class="card-header">
-      <span class="dot dot-blue" aria-hidden="true"></span>
-      <h2>Server Performance</h2>
-    </div>
-    <div class="stat-label">RAM Usage</div>
-    <div class="stat-value" style="font-size:1.125rem;"><span id="ram">0 / 0 MB</span></div>
-    <div style="margin-top:0.75rem;">
-      <div class="stat-label">Uptime</div>
-      <div class="stat-value" style="font-size:1.125rem;" id="uptime">0s</div>
-    </div>
-  </div>
-
-  <!-- TPS Card -->
-  <div class="card">
-    <div class="card-header">
-      <span class="dot dot-purple" aria-hidden="true"></span>
-      <h2>Server TPS</h2>
-    </div>
-    <div class="stat-label">Ticks Per Second</div>
-    <div class="stat-value" id="tps">20.0</div>
-  </div>
-
-  <!-- Server Control Card -->
+<!-- Weather & Time Controls -->
+<div class="cards">
   <div class="card card-full">
     <div class="card-header">
       <span class="dot dot-amber" aria-hidden="true"></span>
-      <h2>Server Control</h2>
+      <h2>Controls</h2>
     </div>
     <div class="ctrl-row">
-      <span style="font-size:0.8125rem;color:#8a847c;flex:1;min-width:140px;">Control: Save, Reload Server, Stop Server</span>
-      <button class="btn btn-save" onclick="saveServer()">Save</button>
-      <button class="btn btn-restart" onclick="reloadServer()">Reload</button>
-      <button class="btn btn-stop" onclick="stopServer()">Stop</button>
+      <span class="ctrl-label">Weather</span>
+      <button class="btn btn-accent-teal" onclick="weatherClear()">Clear</button>
+      <button class="btn btn-accent-blue" onclick="weatherRain()">Rain</button>
+      <button class="btn btn-accent-pink" onclick="weatherThunder()">Thunder</button>
     </div>
     <div class="ctrl-row">
-      <span style="font-size:0.8125rem;color:#8a847c;flex:1;min-width:140px;">Weather: Clear, Rain, Thunder</span>
-      <button class="btn" style="background:#a8d4e8;color:#3a5c5c;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="weatherClear()">Clear</button>
-      <button class="btn" style="background:#c4d4e8;color:#3a4a5c;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="weatherRain()">Rain</button>
-      <button class="btn" style="background:#e8d4e8;color:#5c3a4a;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="weatherThunder()">Thunder</button>
-    </div>
-    <div class="ctrl-row">
-      <span style="font-size:0.8125rem;color:#8a847c;flex:1;min-width:140px;">Time: Day, Noon, Night, Midnight</span>
-      <button class="btn" style="background:#faf0d4;color:#6b5e30;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="timeDay()">Day</button>
-      <button class="btn" style="background:#fae8d4;color:#6b4e30;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="timeNoon()">Noon</button>
-      <button class="btn" style="background:#d4d4e8;color:#3a3a5c;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="timeNight()">Night</button>
-      <button class="btn" style="background:#d4d4e8;color:#2a2a4c;font-size:0.8125rem;padding:0.625rem 1.25rem;" onclick="timeMidnight()">Midnight</button>
+      <span class="ctrl-label">Time</span>
+      <button class="btn btn-accent-amber" onclick="timeDay()">Day</button>
+      <button class="btn btn-accent-orange" onclick="timeNoon()">Noon</button>
+      <button class="btn btn-accent-indigo" onclick="timeNight()">Night</button>
+      <button class="btn btn-accent-indigo" onclick="timeMidnight()" style="color:#2a2a4c;">Midnight</button>
     </div>
   </div>
+</div>
 
-  <!-- Online Players Card -->
-  <div class="card card-full">
-    <div class="card-header">
-      <span class="dot dot-green" aria-hidden="true"></span>
-      <h2>Online Players</h2>
-      <span id="player-count" style="font-size:0.8rem;color:#8a847c;"></span>
+<!-- 4 Stats Grid Cards -->
+<div class="cards">
+  <!-- Online Players -->
+  <div class="card">
+    <div class="stat-icon-row">
+      <div class="stat-icon stat-icon-players">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      </div>
+      <div class="stat-icon-label">Players</div>
     </div>
-    <div id="players"></div>
+    <div class="stat-value-large" id="online">0</div>
+    <div class="stat-sub">online</div>
   </div>
 
-  <!-- Console Output Card -->
-  <div class="card card-full">
+  <!-- TPS -->
+  <div class="card">
+    <div class="stat-icon-row">
+      <div class="stat-icon stat-icon-tps">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <div class="stat-icon-label">TPS</div>
+    </div>
+    <div class="stat-value-large" id="tps">20.0</div>
+    <div class="stat-sub">ticks/sec</div>
+  </div>
+
+  <!-- RAM -->
+  <div class="card">
+    <div class="stat-icon-row">
+      <div class="stat-icon stat-icon-ram">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="6" y2="14"/><line x1="9" y1="10" x2="9" y2="14"/></svg>
+      </div>
+      <div class="stat-icon-label">RAM</div>
+    </div>
+    <div class="stat-value-large" id="ram-value">0</div>
+    <div class="stat-sub" id="ram-max">/ 0 MB</div>
+    <div class="ram-bar"><span class="ram-fill" id="ram-fill" style="width:0%"></span></div>
+  </div>
+
+  <!-- CPU -->
+  <div class="card">
+    <div class="stat-icon-row">
+      <div class="stat-icon stat-icon-cpu">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+      </div>
+      <div class="stat-icon-label">CPU</div>
+    </div>
+    <div class="stat-value-large" id="cpu">N/A</div>
+    <div class="stat-sub">load</div>
+  </div>
+</div>
+
+<!-- System & Console Row -->
+<div class="cards sys-row">
+  <!-- System Info (40%) -->
+  <div class="card sys-card">
     <div class="card-header">
       <span class="dot dot-blue" aria-hidden="true"></span>
-      <h2>Console Output</h2>
-      <span style="font-size:0.7rem;color:#8a847c;">last 15 lines</span>
+      <h2>System</h2>
     </div>
-    <pre id="console-dash" class="console" style="max-height:200px;">Loading…</pre>
+    <div class="sys-info">
+      <div class="sys-item">
+        <span class="sys-label">OS</span>
+        <span class="sys-value" id="sys-os"></span>
+      </div>
+      <div class="sys-item">
+        <span class="sys-label">Uptime</span>
+        <span class="sys-value" id="uptime">0s</span>
+      </div>
+    </div>
   </div>
-</main>
+
+  <!-- Console Output (60%) -->
+  <div class="card sys-console-card">
+    <div class="card-header">
+      <span class="dot dot-blue" aria-hidden="true"></span>
+      <h2>Console</h2>
+      <span class="card-header-meta">last 15 lines</span>
+    </div>
+    <pre id="console-dash" class="console" style="max-height:220px;">Loading…</pre>
+  </div>
+</div>

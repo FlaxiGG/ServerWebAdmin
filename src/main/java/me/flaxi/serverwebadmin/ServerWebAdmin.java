@@ -31,8 +31,44 @@ public class ServerWebAdmin extends JavaPlugin {
 
         saveDefaultConfig();
 
+        String host = getConfig().getString("web.host", "0.0.0.0");
         int port = getConfig().getInt("web.port", 8080);
+        boolean external = getConfig().getBoolean("web.allow-external", true);
+        int sessionTimeout = getConfig().getInt("web.session-timeout", 5);
+        if (sessionTimeout < 1) sessionTimeout = 5;
 
+        if (!external) {
+            host = "127.0.0.1";
+        }
+        if ("localhost".equalsIgnoreCase(host)) {
+            host = "127.0.0.1";
+        }
+
+        Map<String, String> users = loadUsers();
+
+        Map<String, String> alerts = new HashMap<>();
+        alerts.put("kick", getConfig().getString("alerts.kick", "You have been kicked by Web Admin."));
+        alerts.put("ban_reason", getConfig().getString("alerts.ban_reason", "Banned by Web Admin"));
+        alerts.put("ban_kick", getConfig().getString("alerts.ban_kick", "You have been banned by Web Admin."));
+
+        if (webServer != null) {
+            webServer.stop();
+            webServer = null;
+        }
+
+        try {
+            webServer = new WebServer(this, host, port, sessionTimeout, users, alerts, tpsMonitor);
+            getLogger().info("Web server bound to " + host + ":" + port);
+        } catch (java.net.BindException e) {
+            getLogger().severe("Failed to bind web server on " + host + ":" + port + " - Port already in use");
+        } catch (java.net.UnknownHostException e) {
+            getLogger().severe("Invalid host address in config.yml: " + host);
+        } catch (IOException e) {
+            getLogger().severe("Failed to start web server: " + e.getMessage());
+        }
+    }
+
+    public Map<String, String> loadUsers() {
         Map<String, String> users = new HashMap<>();
         usersFile = new File(getDataFolder(), "users.yml");
         if (!usersFile.exists()) {
@@ -62,18 +98,7 @@ public class ServerWebAdmin extends JavaPlugin {
         if (needsSave) {
             saveUsers(users);
         }
-
-        Map<String, String> alerts = new HashMap<>();
-        alerts.put("kick", getConfig().getString("alerts.kick", "You have been kicked by Web Admin."));
-        alerts.put("ban_reason", getConfig().getString("alerts.ban_reason", "Banned by Web Admin"));
-        alerts.put("ban_kick", getConfig().getString("alerts.ban_kick", "You have been banned by Web Admin."));
-
-        try {
-            webServer = new WebServer(this, port, users, alerts, tpsMonitor);
-            getLogger().info("Web Server Started on Port " + port);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        return users;
     }
 
     public void saveUsers(Map<String, String> users) {
@@ -107,21 +132,22 @@ public class ServerWebAdmin extends JavaPlugin {
         }
 
         if (!sender.hasPermission("serverwebadmin.use")) {
-            sender.sendMessage("§cคุณไม่มีสิทธิ์ใช้คำสั่งนี้");
+            sender.sendMessage("§cYou don't have a permission to use this.");
             return true;
         }
 
         if (args.length == 0) {
             sender.sendMessage("§a===== ServerWebAdmin =====");
-            sender.sendMessage("§e/webadmin players §7- ดูผู้เล่นออนไลน์");
-            sender.sendMessage("§e/webadmin kick <player> §7- เตะผู้เล่น");
-            sender.sendMessage("§e/webadmin ban <player> §7- แบนผู้เล่น");
+            sender.sendMessage("§e/webadmin players §7- Show online players");
+            sender.sendMessage("§e/webadmin kick <player> §7- Kick player");
+            sender.sendMessage("§e/webadmin ban <player> §7- Ban player");
+            sender.sendMessage("§e/webadmin reload §7- Reload plugin config");
             sender.sendMessage("§eOnline: §f" + Bukkit.getOnlinePlayers().size());
             return true;
         }
 
         if (args[0].equalsIgnoreCase("players")) {
-            sender.sendMessage("§aผู้เล่นออนไลน์: §f" + Bukkit.getOnlinePlayers().size());
+            sender.sendMessage("§aOnline Players: §f" + Bukkit.getOnlinePlayers().size());
 
             for (Player player : Bukkit.getOnlinePlayers()) {
                 sender.sendMessage("§7- §f" + player.getName());
@@ -132,25 +158,25 @@ public class ServerWebAdmin extends JavaPlugin {
 
         if (args[0].equalsIgnoreCase("kick")) {
             if (args.length < 2) {
-                sender.sendMessage("§cใช้คำสั่ง: /webadmin kick <player>");
+                sender.sendMessage("§cUse command: /webadmin kick <player>");
                 return true;
             }
 
             Player target = Bukkit.getPlayer(args[1]);
 
             if (target == null) {
-                sender.sendMessage("§cไม่พบผู้เล่นนี้ หรือผู้เล่นไม่ได้ออนไลน์");
+                sender.sendMessage("§cNot found or this player is offline.");
                 return true;
             }
 
             target.kickPlayer("You have been kicked by admin.");
-            sender.sendMessage("§aKick ผู้เล่น §f" + target.getName() + " §aสำเร็จ");
+            sender.sendMessage("§aKick player §f" + target.getName() + " §asuccess");
             return true;
         }
 
         if (args[0].equalsIgnoreCase("ban")) {
             if (args.length < 2) {
-                sender.sendMessage("§cใช้คำสั่ง: /webadmin ban <player>");
+                sender.sendMessage("§cUse command: /webadmin ban <player>");
                 return true;
             }
 
@@ -169,11 +195,20 @@ public class ServerWebAdmin extends JavaPlugin {
                 target.kickPlayer("You have been banned by admin.");
             }
 
-            sender.sendMessage("§aBan ผู้เล่น §f" + playerName + " §aสำเร็จ");
+            sender.sendMessage("§aBan player §f" + playerName + " §asuccess");
             return true;
         }
 
-        sender.sendMessage("§cไม่พบคำสั่งนี้ ใช้ /webadmin");
+        if (args[0].equalsIgnoreCase("reload")) {
+            sender.sendMessage("§aReloading ServerWebAdmin...");
+            onDisable();
+            reloadConfig();
+            onEnable();
+            sender.sendMessage("§aServerWebAdmin reloaded successfully!");
+            return true;
+        }
+
+        sender.sendMessage("§cNot found this command, Use /webadmin for help.");
         return true;
     }
 }
