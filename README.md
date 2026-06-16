@@ -1,3 +1,8 @@
+# Join Discord server
+https://discord.gg/EYaT5EkD7U
+
+---
+
 # MinePanel
 
 A lightweight and modern **web-based management panel for Minecraft servers**, designed to provide real-time server monitoring, player management, authentication, and remote administration directly from your browser.
