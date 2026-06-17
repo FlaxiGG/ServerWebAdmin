@@ -259,7 +259,7 @@ function loadConsole(){
  .then(function(r){return r.json()})
  .then(function(data){
    var el=document.getElementById('console-full');
-    if(el)el.textContent=data.lines&&data.lines.length?data.lines.join('\n'):'No output';
+    if(el)el.textContent=data.lines&&data.lines.length?data.lines.join('\n'):'The console is ready, waiting for new server output\u2026';
    var cnt=document.getElementById('console-line-count');
    if(cnt)cnt.textContent=data.totalLines?data.totalLines+' lines':'';
  }).catch(function(){});
@@ -269,7 +269,7 @@ function loadConsoleDash(){
  .then(function(r){return r.json()})
  .then(function(data){
    var el=document.getElementById('console-dash');
-    if(el)el.textContent=data.lines&&data.lines.length?data.lines.join('\n'):'No output';
+    if(el)el.textContent=data.lines&&data.lines.length?data.lines.join('\n'):'The console is ready, waiting for new server output\u2026';
  }).catch(function(){});
 }
 function loadBans(){

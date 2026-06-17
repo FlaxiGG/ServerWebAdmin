@@ -648,7 +648,7 @@ public class WebServer extends NanoHTTPD {
 
             StringBuilder sb = new StringBuilder();
             try {
-                File logFile = new File(Bukkit.getWorldContainer().getParentFile(), "logs/latest.log");
+                File logFile = new File("logs/latest.log");
                 if (logFile.exists()) {
                     List<String> allLines = new ArrayList<>();
                     BufferedReader reader = new BufferedReader(new FileReader(logFile));
@@ -665,9 +665,11 @@ public class WebServer extends NanoHTTPD {
                         sb.append("\"").append(escapeJson(allLines.get(i))).append("\"");
                     }
                     sb.append("]}");
+                } else {
+                    sb.append("{\"totalLines\":0,\"lines\":[]}");
                 }
             } catch (IOException e) {
-                sb.append("{\"lines\":[]}");
+                sb.append("{\"totalLines\":0,\"lines\":[]}");
             }
 
             return json(sb.toString());

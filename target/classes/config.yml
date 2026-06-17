@@ -3,16 +3,42 @@
 # =====================================================================
 
 web:
-  # Host address to bind the web server to.
-  # Use "0.0.0.0" to listen on all network interfaces (default).
-  # Use "127.0.0.1" or "localhost" to accept local connections only.
-  # This is overridden when allow-external is set to false (forces 127.0.0.1).
+  # Host binding mode.
+  #
+  # Supported values:
+  #   "0.0.0.0"    → Listen on all network interfaces (default).
+  #                    Recommended for most setups — works everywhere.
+  #   "127.0.0.1"  → Localhost only.
+  #   "localhost"  → Same as 127.0.0.1 (normalized automatically).
+  #   "192.168.x.x"→ Your local LAN IP.
+  #   "auto"       → Plugin auto-detects the best host to bind to.
+  #
+  # ⚠ DO NOT use a Public IP address (e.g., 1xx.x.x.x, 2xx.x.x.x).
+  #   Public IPs are NOT on your machine's network interface.
+  #   The plugin will detect this and auto-fallback to 0.0.0.0.
+  #   Use 0.0.0.0 + port forwarding on your router instead.
   host: 0.0.0.0
 
   # TCP port for the web server.
   # Default: 8080. Change to any available port (e.g., 9000).
   # If the port is already in use, the plugin logs a warning and continues
   # without crashing the server.
+  #
+  # ── Firewall & Network Setup ──────────────────────────────────────────
+  #   Windows:  Open this port in Windows Firewall > Inbound Rules
+  #   Linux:    sudo ufw allow 8080/tcp  (or your firewall manager)
+  #
+  #   Local network only (192.168.x.x):
+  #     Other devices on your LAN can access http://server-ip:8080
+  #
+  #   External / Public access (over internet):
+  #     1. Set "allow-external: true" below
+  #     2. Forward this port in your router/modem to the server machine
+  #        (Router > Port Forwarding > External 8080 → Internal 8080)
+  #     3. Your public IP is: https://www.whatsmyip.org
+  #     4. Or use a dynamic DNS service (noip.com, duckdns.org) if your
+  #        public IP changes.
+  #   ─────────────────────────────────────────────────────────────────────
   port: 8080
 
   # Session timeout in minutes. After this period of inactivity,
@@ -21,11 +47,16 @@ web:
   session-timeout: 5
 
   # Controls external (public) network access.
-  # When true (default): binds to the host address configured above.
-  # When false: forces binding to 127.0.0.1 only — useful when you
-  #   want the web UI accessible only from the Minecraft server console
-  #   or via a local reverse proxy (Nginx, Apache, etc.).
+  # When true (default): enables external access.
+  # When false: forces binding to 127.0.0.1 only — useful for
+  #   local-only access or when using a reverse proxy (Nginx, Cloudflare Tunnel).
   allow-external: true
+
+  # If the web server fails to bind to the configured host,
+  # automatically fall back to 0.0.0.0 (all interfaces).
+  # This helps in Docker, Pterodactyl, and shared hosting environments.
+  # Set to false if you want the plugin to fail with a clear error instead.
+  fallback-to-any: true
 
 # =====================================================================
 # Alert messages shown to players when they are kicked or banned.

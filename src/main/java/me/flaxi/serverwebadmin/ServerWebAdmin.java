@@ -19,9 +19,9 @@ import org.mindrot.jbcrypt.BCrypt;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.util.*;
 
 public class ServerWebAdmin extends JavaPlugin {
 
@@ -42,6 +42,7 @@ public class ServerWebAdmin extends JavaPlugin {
         String host = getConfig().getString("web.host", "0.0.0.0");
         int port = getConfig().getInt("web.port", 8080);
         boolean external = getConfig().getBoolean("web.allow-external", true);
+        boolean fallbackToAny = getConfig().getBoolean("web.fallback-to-any", true);
         int sessionTimeout = getConfig().getInt("web.session-timeout", 5);
         if (sessionTimeout < 1) sessionTimeout = 5;
 
@@ -50,6 +51,18 @@ public class ServerWebAdmin extends JavaPlugin {
         }
         if ("localhost".equalsIgnoreCase(host)) {
             host = "127.0.0.1";
+        }
+        if ("auto".equalsIgnoreCase(host)) {
+            host = detectBestHost();
+            getLogger().info("Auto-detected host: " + host);
+        }
+
+        if (isPublicIp(host)) {
+            getLogger().warning("Host \"" + host + "\" is a public IP address.");
+            getLogger().warning("Public IPs cannot be bound directly " +
+                    "(they are not on your machine's network interface).");
+            getLogger().warning("Falling back to 0.0.0.0 — use port forwarding instead.");
+            host = "0.0.0.0";
         }
 
         Map<String, String> users = loadUsers();
@@ -64,15 +77,41 @@ public class ServerWebAdmin extends JavaPlugin {
             webServer = null;
         }
 
+        startServer(host, port, sessionTimeout, users, alerts, fallbackToAny);
+    }
+
+    private void startServer(String host, int port, int sessionTimeout,
+                             Map<String, String> users, Map<String, String> alerts,
+                             boolean fallbackToAny) {
         try {
             webServer = new WebServer(this, host, port, sessionTimeout, users, alerts, tpsMonitor);
             getLogger().info("Web server bound to " + host + ":" + port);
+            return;
         } catch (java.net.BindException e) {
-            getLogger().severe("Failed to bind web server on " + host + ":" + port + " - Port already in use");
+            getLogger().severe("Cannot bind to " + host + ":" + port + " — Port already in use");
         } catch (java.net.UnknownHostException e) {
-            getLogger().severe("Invalid host address in config.yml: " + host);
+            getLogger().severe("Invalid host address: \"" + host + "\"");
         } catch (IOException e) {
-            getLogger().severe("Failed to start web server: " + e.getMessage());
+            getLogger().severe("Cannot bind to " + host + ":" + port);
+            getLogger().severe("Reason: " + e.getMessage());
+            getLogger().severe("Possible causes:");
+            getLogger().severe("  • Docker container — process sees internal IP, not public IP");
+            getLogger().severe("  • Shared hosting (Pterodactyl) — no direct interface access");
+            getLogger().severe("  • Public IP not assigned to any local network interface");
+            getLogger().severe("Recommended fix:");
+            getLogger().severe("  • Set host: 0.0.0.0 in config.yml");
+            getLogger().severe("  • Use port forwarding on your router / hosting panel");
+            getLogger().severe("  • Or use a reverse proxy (Nginx, Cloudflare Tunnel)");
+        }
+
+        if (fallbackToAny && !"0.0.0.0".equals(host)) {
+            getLogger().warning("fallback-to-any is enabled — trying 0.0.0.0:" + port + " ...");
+            try {
+                webServer = new WebServer(this, "0.0.0.0", port, sessionTimeout, users, alerts, tpsMonitor);
+                getLogger().info("Web server bound to 0.0.0.0:" + port + " (fallback)");
+            } catch (IOException ex) {
+                getLogger().severe("Fallback also failed: " + ex.getMessage());
+            }
         }
     }
 
@@ -218,5 +257,35 @@ public class ServerWebAdmin extends JavaPlugin {
 
         sender.sendMessage("§cNot found this command, Use /webadmin for help.");
         return true;
+    }
+
+    private boolean isPublicIp(String host) {
+        try {
+            InetAddress addr = InetAddress.getByName(host);
+            if (addr.isLoopbackAddress()) return false;
+            if (addr.isSiteLocalAddress()) return false;
+            if (addr.isLinkLocalAddress()) return false;
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String detectBestHost() {
+        try {
+            Enumeration<NetworkInterface> nets = NetworkInterface.getNetworkInterfaces();
+            while (nets.hasMoreElements()) {
+                NetworkInterface ni = nets.nextElement();
+                if (ni.isLoopback() || !ni.isUp()) continue;
+                Enumeration<InetAddress> inets = ni.getInetAddresses();
+                while (inets.hasMoreElements()) {
+                    InetAddress addr = inets.nextElement();
+                    if (addr instanceof java.net.Inet4Address && !addr.isLoopbackAddress()) {
+                        return addr.getHostAddress();
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return "0.0.0.0";
     }
 }
