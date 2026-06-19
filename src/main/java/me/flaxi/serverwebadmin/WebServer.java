@@ -24,24 +24,67 @@ import java.lang.management.ManagementFactory;
 public class WebServer extends NanoHTTPD {
 
     private final ServerWebAdmin plugin;
-    private final Map<String, String> users;
+    private final Map<String, UserInfo> users;
     private final Map<String, String> alerts;
     private final ActionLogger actionLogger;
     private final TpsMonitor tpsMonitor;
     private final Map<String, SessionInfo> sessions = new HashMap<>();
     private final long sessionTimeoutMs;
 
+    public static class UserInfo {
+        final String password;
+        final String role;
+        boolean mustChangePassword;
+
+        UserInfo(String password, String role, boolean mustChangePassword) {
+            this.password = password;
+            this.role = role;
+            this.mustChangePassword = mustChangePassword;
+        }
+    }
+
     private static class SessionInfo {
         final String username;
+        final String role;
         long expiry;
-        SessionInfo(String username, long expiry) {
+        SessionInfo(String username, String role, long expiry) {
             this.username = username;
+            this.role = role;
             this.expiry = expiry;
         }
     }
 
+    private static final Map<String, Set<String>> ROLE_PERMISSIONS = new HashMap<>();
+    static {
+        Set<String> all = new HashSet<>(Arrays.asList(
+            "dashboard.view", "console.view", "console.command",
+            "players.view", "player.kick", "player.ban",
+            "whitelist.view", "whitelist.add", "whitelist.remove",
+            "weather.clear", "weather.rain", "weather.thunder",
+            "time.day", "time.noon", "time.night", "time.midnight",
+            "bans.view",
+            "users.view", "users.create", "users.edit", "users.delete",
+            "server.reload", "server.stop"
+        ));
+        ROLE_PERMISSIONS.put("owner", all);
+        ROLE_PERMISSIONS.put("admin", new HashSet<>(Arrays.asList(
+            "dashboard.view", "console.view", "console.command",
+            "players.view", "player.kick", "player.ban",
+            "whitelist.view", "whitelist.add", "whitelist.remove",
+            "weather.clear", "weather.rain", "weather.thunder",
+            "time.day", "time.noon", "time.night", "time.midnight",
+            "bans.view"
+        )));
+        ROLE_PERMISSIONS.put("moderator", new HashSet<>(Arrays.asList(
+            "dashboard.view", "console.view", "players.view", "player.kick"
+        )));
+        ROLE_PERMISSIONS.put("viewer", new HashSet<>(Arrays.asList(
+            "dashboard.view", "players.view"
+        )));
+    }
+
     public WebServer(ServerWebAdmin plugin, String hostname, int port, int sessionTimeoutMin,
-                     Map<String, String> users, Map<String, String> alerts, TpsMonitor tpsMonitor) throws IOException {
+                     Map<String, UserInfo> users, Map<String, String> alerts, TpsMonitor tpsMonitor) throws IOException {
         super(hostname, port);
         this.plugin = plugin;
         this.users = users;
@@ -64,19 +107,29 @@ public class WebServer extends NanoHTTPD {
             if (username == null || password == null || username.isEmpty() || password.isEmpty()) {
                 return json("{\"success\":false,\"message\":\"Missing username or password\"}");
             }
-            String storedHash = users.get(username);
-            if (storedHash != null && BCrypt.checkpw(password, storedHash)) {
+            UserInfo info = users.get(username);
+            if (info != null && BCrypt.checkpw(password, info.password)) {
                 final String ip = getClientIp(session);
                 actionLogger.write("LOGIN", username, ip);
 
                 sessions.values().removeIf(s -> s.username.equals(username));
 
                 String sessionToken = UUID.randomUUID().toString();
-                sessions.put(sessionToken, new SessionInfo(username, System.currentTimeMillis() + sessionTimeoutMs));
+                sessions.put(sessionToken, new SessionInfo(username, info.role, System.currentTimeMillis() + sessionTimeoutMs));
 
-                boolean mustChange = BCrypt.checkpw("admin123", storedHash);
+                Set<String> perms = ROLE_PERMISSIONS.getOrDefault(info.role, Collections.emptySet());
+                StringBuilder permJson = new StringBuilder();
+                int pi = 0;
+                for (String p : perms) {
+                    if (pi > 0) permJson.append(",");
+                    permJson.append("\"").append(p).append("\"");
+                    pi++;
+                }
+
                 Response resp = newFixedLengthResponse(Response.Status.OK, "application/json",
-                        "{\"success\":true,\"token\":\"" + sessionToken + "\",\"username\":\"" + username + "\",\"mustChange\":" + mustChange + "}");
+                        "{\"success\":true,\"token\":\"" + sessionToken + "\",\"username\":\"" + username +
+                        "\",\"role\":\"" + info.role + "\",\"mustChange\":" + info.mustChangePassword +
+                        ",\"permissions\":[" + permJson.toString() + "]}");
                 resp.addHeader("Set-Cookie", "token=" + sessionToken + "; HttpOnly; Path=/; SameSite=Lax; Max-Age=" + (sessionTimeoutMs / 1000));
                 return resp;
             }
@@ -105,11 +158,15 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "users.view")) {
+                return forbidden();
+            }
             StringBuilder sb = new StringBuilder("[");
             int idx = 0;
-            for (String username : users.keySet()) {
+            for (Map.Entry<String, UserInfo> u : users.entrySet()) {
                 if (idx > 0) sb.append(",");
-                sb.append("{\"username\":\"").append(escapeJson(username)).append("\"}");
+                sb.append("{\"username\":\"").append(escapeJson(u.getKey()))
+                        .append("\",\"role\":\"").append(escapeJson(u.getValue().role)).append("\"}");
                 idx++;
             }
             sb.append("]");
@@ -120,16 +177,23 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "users.create")) {
+                return forbidden();
+            }
             Map<String, String> params = session.getParms();
             final String username = params.get("username");
             final String password = params.get("password");
+            String role = params.get("role");
+            if (role == null || role.isEmpty()) role = "viewer";
+            if ("owner".equals(role)) role = "viewer";
+
             if (username == null || password == null || username.isEmpty() || password.isEmpty()) {
                 return json("{\"success\":false,\"message\":\"Missing username or password\"}");
             }
             if (users.containsKey(username)) {
                 return json("{\"success\":false,\"message\":\"User already exists\"}");
             }
-            users.put(username, BCrypt.hashpw(password, BCrypt.gensalt()));
+            users.put(username, new UserInfo(BCrypt.hashpw(password, BCrypt.gensalt()), role, false));
             plugin.saveUsers(users);
             final String ip = getClientIp(session);
             actionLogger.write("USER_ADD", username, ip);
@@ -140,13 +204,20 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "users.delete")) {
+                return forbidden();
+            }
             Map<String, String> params = session.getParms();
             final String username = params.get("username");
             if (username == null || username.isEmpty()) {
                 return json("{\"success\":false,\"message\":\"Missing username parameter\"}");
             }
-            if (!users.containsKey(username)) {
+            UserInfo info = users.get(username);
+            if (info == null) {
                 return json("{\"success\":false,\"message\":\"User not found\"}");
+            }
+            if ("owner".equals(info.role)) {
+                return json("{\"success\":false,\"message\":\"Cannot remove the owner account\"}");
             }
             if (users.size() <= 1) {
                 return json("{\"success\":false,\"message\":\"Cannot remove the last user\"}");
@@ -162,20 +233,57 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "users.edit")) {
+                return forbidden();
+            }
             Map<String, String> params = session.getParms();
             final String username = params.get("username");
             final String newPassword = params.get("password");
             if (username == null || newPassword == null || username.isEmpty() || newPassword.isEmpty()) {
                 return json("{\"success\":false,\"message\":\"Missing username or password\"}");
             }
-            if (!users.containsKey(username)) {
+            UserInfo info = users.get(username);
+            if (info == null) {
                 return json("{\"success\":false,\"message\":\"User not found\"}");
             }
-            users.put(username, BCrypt.hashpw(newPassword, BCrypt.gensalt()));
+            users.put(username, new UserInfo(BCrypt.hashpw(newPassword, BCrypt.gensalt()), info.role, info.mustChangePassword));
             plugin.saveUsers(users);
             final String ip = getClientIp(session);
             actionLogger.write("USER_PASSWORD", username, ip);
             return json("{\"success\":true,\"message\":\"Password changed\"}");
+        }
+
+        if (uri.equals("/api/users/edit") && method == Method.POST) {
+            if (!isAuthorized(session)) {
+                return unauthorized();
+            }
+            if (!hasPermission(session, "users.edit")) {
+                return forbidden();
+            }
+            Map<String, String> params = session.getParms();
+            String username = params.get("username");
+            String newRole = params.get("role");
+            if (username == null || newRole == null || username.isEmpty() || newRole.isEmpty()) {
+                return json("{\"success\":false,\"message\":\"Missing username or role\"}");
+            }
+            UserInfo info = users.get(username);
+            if (info == null) {
+                return json("{\"success\":false,\"message\":\"User not found\"}");
+            }
+            if ("owner".equals(info.role)) {
+                return json("{\"success\":false,\"message\":\"Cannot change the owner role\"}");
+            }
+            if ("owner".equals(newRole)) {
+                return json("{\"success\":false,\"message\":\"Cannot assign owner role via API\"}");
+            }
+            if (!ROLE_PERMISSIONS.containsKey(newRole)) {
+                return json("{\"success\":false,\"message\":\"Invalid role\"}");
+            }
+            users.put(username, new UserInfo(info.password, newRole, info.mustChangePassword));
+            plugin.saveUsers(users);
+            final String ip = getClientIp(session);
+            actionLogger.write("USER_EDIT", username + " role=" + newRole, ip);
+            return json("{\"success\":true,\"message\":\"Role changed to " + newRole + "\"}");
         }
 
         if (uri.equals("/api/change-password") && method == Method.POST) {
@@ -199,13 +307,14 @@ public class WebServer extends NanoHTTPD {
                 return json("{\"success\":false,\"message\":\"New password must be different from old password\"}");
             }
 
-            String storedHash = users.get(username);
-            if (storedHash == null || !BCrypt.checkpw(oldPassword, storedHash)) {
+            UserInfo curInfo = users.get(username);
+            if (curInfo == null || !BCrypt.checkpw(oldPassword, curInfo.password)) {
                 return json("{\"success\":false,\"message\":\"Current password is incorrect\"}");
             }
 
             String newHash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
-            users.put(username, newHash);
+            curInfo.mustChangePassword = false;
+            users.put(username, new UserInfo(newHash, curInfo.role, false));
             plugin.saveUsers(users);
 
             final String ip = getClientIp(session);
@@ -221,6 +330,9 @@ public class WebServer extends NanoHTTPD {
         if (uri.equals("/api/players") && method == Method.GET) {
             if (!isAuthorized(session)) {
                 return unauthorized();
+            }
+            if (!hasPermission(session, "players.view")) {
+                return forbidden();
             }
             StringBuilder result = new StringBuilder();
             result.append("{\"online\":").append(Bukkit.getOnlinePlayers().size()).append(",");
@@ -252,6 +364,9 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "player.kick")) {
+                return forbidden();
+            }
             Map<String, String> params = session.getParms();
             final String playerName = params.get("player");
             final String reason = params.get("reason");
@@ -281,6 +396,9 @@ public class WebServer extends NanoHTTPD {
         if (uri.equals("/api/ban") && method == Method.POST) {
             if (!isAuthorized(session)) {
                 return unauthorized();
+            }
+            if (!hasPermission(session, "player.ban")) {
+                return forbidden();
             }
             Map<String, String> params = session.getParms();
             final String playerName = params.get("player");
@@ -366,6 +484,9 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "server.reload")) {
+                return forbidden();
+            }
             final String ip = getClientIp(session);
             actionLogger.write("RELOAD", "SERVER", ip);
 
@@ -400,6 +521,9 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "server.stop")) {
+                return forbidden();
+            }
             final String ip = getClientIp(session);
             actionLogger.write("STOP", "SERVER", ip);
 
@@ -425,6 +549,9 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "weather.clear")) {
+                return forbidden();
+            }
             final String ip = getClientIp(session);
             actionLogger.write("WEATHER", "CLEAR", ip);
 
@@ -442,6 +569,9 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "weather.rain")) {
+                return forbidden();
+            }
             final String ip = getClientIp(session);
             actionLogger.write("WEATHER", "RAIN", ip);
 
@@ -458,6 +588,9 @@ public class WebServer extends NanoHTTPD {
         if (uri.equals("/api/thunder") && method == Method.POST) {
             if (!isAuthorized(session)) {
                 return unauthorized();
+            }
+            if (!hasPermission(session, "weather.thunder")) {
+                return forbidden();
             }
             final String ip = getClientIp(session);
             actionLogger.write("WEATHER", "THUNDER", ip);
@@ -477,6 +610,9 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "time.day")) {
+                return forbidden();
+            }
             final String ip = getClientIp(session);
             actionLogger.write("TIME SET", "DAY", ip);
 
@@ -492,6 +628,9 @@ public class WebServer extends NanoHTTPD {
         if (uri.equals("/api/night") && method == Method.POST) {
             if (!isAuthorized(session)) {
                 return unauthorized();
+            }
+            if (!hasPermission(session, "time.night")) {
+                return forbidden();
             }
             final String ip = getClientIp(session);
             actionLogger.write("TIME SET", "NIGHT", ip);
@@ -509,6 +648,9 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "time.noon")) {
+                return forbidden();
+            }
             final String ip = getClientIp(session);
             actionLogger.write("TIME SET", "NOON", ip);
 
@@ -524,6 +666,9 @@ public class WebServer extends NanoHTTPD {
         if (uri.equals("/api/midnight") && method == Method.POST) {
             if (!isAuthorized(session)) {
                 return unauthorized();
+            }
+            if (!hasPermission(session, "time.midnight")) {
+                return forbidden();
             }
             final String ip = getClientIp(session);
             actionLogger.write("TIME SET", "MIDNIGHT", ip);
@@ -543,6 +688,9 @@ public class WebServer extends NanoHTTPD {
         if (uri.equals("/api/teleport") && method == Method.POST) {
             if (!isAuthorized(session)) {
                 return unauthorized();
+            }
+            if (!hasPermission(session, "player.kick")) {
+                return forbidden();
             }
             Map<String, String> params = session.getParms();
             final String fromName = params.get("from");
@@ -573,6 +721,9 @@ public class WebServer extends NanoHTTPD {
         if (uri.equals("/api/player-action") && method == Method.POST) {
             if (!isAuthorized(session)) {
                 return unauthorized();
+            }
+            if (!hasPermission(session, "player.kick")) {
+                return forbidden();
             }
             Map<String, String> params = session.getParms();
             final String playerName = params.get("player");
@@ -613,6 +764,9 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "console.command")) {
+                return forbidden();
+            }
             Map<String, String> params = session.getParms();
             final String command = params.get("command");
 
@@ -636,6 +790,9 @@ public class WebServer extends NanoHTTPD {
         if (uri.equals("/api/console") && method == Method.GET) {
             if (!isAuthorized(session)) {
                 return unauthorized();
+            }
+            if (!hasPermission(session, "console.view")) {
+                return forbidden();
             }
 
             int lines = 50;
@@ -678,6 +835,9 @@ public class WebServer extends NanoHTTPD {
         if (uri.equals("/api/bans") && method == Method.GET) {
             if (!isAuthorized(session)) {
                 return unauthorized();
+            }
+            if (!hasPermission(session, "bans.view")) {
+                return forbidden();
             }
 
             StringBuilder sb = new StringBuilder();
@@ -725,6 +885,9 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "whitelist.view")) {
+                return forbidden();
+            }
 
             boolean enabled = Bukkit.hasWhitelist();
             Set<OfflinePlayer> whitelisted = Bukkit.getWhitelistedPlayers();
@@ -767,6 +930,9 @@ public class WebServer extends NanoHTTPD {
             if (!isAuthorized(session)) {
                 return unauthorized();
             }
+            if (!hasPermission(session, "whitelist.add")) {
+                return forbidden();
+            }
             Map<String, String> params = session.getParms();
             final String playerName = params.get("player");
 
@@ -793,6 +959,9 @@ public class WebServer extends NanoHTTPD {
         if (uri.equals("/api/whitelist/remove") && method == Method.POST) {
             if (!isAuthorized(session)) {
                 return unauthorized();
+            }
+            if (!hasPermission(session, "whitelist.remove")) {
+                return forbidden();
             }
             Map<String, String> params = session.getParms();
             final String playerName = params.get("player");
@@ -872,6 +1041,25 @@ public class WebServer extends NanoHTTPD {
         } catch (Exception ignored) {}
         double alt = ManagementFactory.getOperatingSystemMXBean().getSystemLoadAverage();
         return alt >= 0 ? Math.round(alt * 100.0) / 100.0 : -1;
+    }
+
+    private String getRole(IHTTPSession session) {
+        String token = getToken(session);
+        if (token == null) return null;
+        SessionInfo si = sessions.get(token);
+        return si != null ? si.role : null;
+    }
+
+    private boolean hasPermission(IHTTPSession session, String permission) {
+        String role = getRole(session);
+        if (role == null) return false;
+        Set<String> perms = ROLE_PERMISSIONS.get(role);
+        return perms != null && perms.contains(permission);
+    }
+
+    private Response forbidden() {
+        return newFixedLengthResponse(Response.Status.FORBIDDEN,
+                "application/json", "{\"success\":false,\"message\":\"Permission denied\"}");
     }
 
     private boolean isAuthorized(IHTTPSession session) {

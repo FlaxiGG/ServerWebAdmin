@@ -65,7 +65,7 @@ public class ServerWebAdmin extends JavaPlugin {
             host = "0.0.0.0";
         }
 
-        Map<String, String> users = loadUsers();
+        Map<String, WebServer.UserInfo> users = loadUsers();
 
         Map<String, String> alerts = new HashMap<>();
         alerts.put("kick", getConfig().getString("alerts.kick", "You have been kicked by Web Admin."));
@@ -81,7 +81,7 @@ public class ServerWebAdmin extends JavaPlugin {
     }
 
     private void startServer(String host, int port, int sessionTimeout,
-                             Map<String, String> users, Map<String, String> alerts,
+                             Map<String, WebServer.UserInfo> users, Map<String, String> alerts,
                              boolean fallbackToAny) {
         try {
             webServer = new WebServer(this, host, port, sessionTimeout, users, alerts, tpsMonitor);
@@ -115,8 +115,8 @@ public class ServerWebAdmin extends JavaPlugin {
         }
     }
 
-    public Map<String, String> loadUsers() {
-        Map<String, String> users = new HashMap<>();
+    public Map<String, WebServer.UserInfo> loadUsers() {
+        Map<String, WebServer.UserInfo> users = new HashMap<>();
         usersFile = new File(getDataFolder(), "users.yml");
         if (!usersFile.exists()) {
             saveResource("users.yml", false);
@@ -132,15 +132,17 @@ public class ServerWebAdmin extends JavaPlugin {
                         hash = BCrypt.hashpw(hash, BCrypt.gensalt());
                         needsSave = true;
                     }
-                    users.put(username, hash);
+                    String role = usersConfig.getString("users." + username + ".role", "viewer");
+                    boolean mustChange = usersConfig.getBoolean("users." + username + ".mustChangePassword", false);
+                    users.put(username, new WebServer.UserInfo(hash, role, mustChange));
                 }
             }
         }
         if (users.isEmpty()) {
             String defaultHash = BCrypt.hashpw("admin123", BCrypt.gensalt());
-            users.put("admin", defaultHash);
+            users.put("owner", new WebServer.UserInfo(defaultHash, "owner", true));
             needsSave = true;
-            getLogger().info("Default admin user created (admin / admin123)");
+            getLogger().info("Default owner account created (owner / admin123)");
         }
         if (needsSave) {
             saveUsers(users);
@@ -148,10 +150,12 @@ public class ServerWebAdmin extends JavaPlugin {
         return users;
     }
 
-    public void saveUsers(Map<String, String> users) {
+    public void saveUsers(Map<String, WebServer.UserInfo> users) {
         usersConfig.set("users", null);
-        for (Map.Entry<String, String> entry : users.entrySet()) {
-            usersConfig.set("users." + entry.getKey() + ".password", entry.getValue());
+        for (Map.Entry<String, WebServer.UserInfo> entry : users.entrySet()) {
+            usersConfig.set("users." + entry.getKey() + ".password", entry.getValue().password);
+            usersConfig.set("users." + entry.getKey() + ".role", entry.getValue().role);
+            usersConfig.set("users." + entry.getKey() + ".mustChangePassword", entry.getValue().mustChangePassword);
         }
         try {
             usersConfig.save(usersFile);

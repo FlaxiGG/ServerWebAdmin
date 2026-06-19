@@ -1,4 +1,6 @@
 var currentUser='';
+var permissions=[];
+function hasPerm(p){return permissions.indexOf(p)!==-1;}
 var heartbeatTimer=null;
 (function loadTheme(){
   if(localStorage.getItem('theme')==='dark'){
@@ -11,6 +13,14 @@ var heartbeatTimer=null;
 (function checkAuthOnLoad(){
   fetch('/api/heartbeat').then(function(r){
     if(r.ok){
+      try{permissions=JSON.parse(localStorage.getItem('adminPerms')||'[]');}catch(e){permissions=[];}
+      var pagePerms = {console:'console.view',players:'players.view',bans:'bans.view',whitelist:'whitelist.view',users:'users.view'};
+      for(var page in pagePerms){
+        if(!hasPerm(pagePerms[page])){
+          var b=document.querySelector('.nav-btn[data-page="'+page+'"]');
+          if(b)b.style.display='none';
+        }
+      }
       document.getElementById('login-page').style.display='none';
       var ac=document.getElementById('app-container');
       ac.classList.add('visible');
@@ -107,11 +117,14 @@ function doLogin(){
   var btn=document.querySelector('#login-page .btn-primary');
   btn.disabled=true;btn.textContent='Signing in…';
   fetch('/api/login?username='+encodeURIComponent(u)+'&password='+encodeURIComponent(p),{method:'POST'})
-  .then(function(r){return r.json()})
+  .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
   .then(function(data){
     btn.disabled=false;btn.textContent='Sign In';
     if(data.success){
       currentUser=data.username;
+      permissions=data.permissions||[];
+      localStorage.setItem('adminRole',data.role||'');
+      localStorage.setItem('adminPerms',JSON.stringify(permissions));
       if(data.mustChange){
         document.getElementById('login-page').style.display='none';
         document.getElementById('app-container').classList.add('visible');
@@ -137,6 +150,9 @@ function doLogout(){
   stopHeartbeat();
   fetch('/api/logout',{method:'POST'});
   currentUser='';
+  permissions=[];
+  localStorage.removeItem('adminRole');
+  localStorage.removeItem('adminPerms');
   document.getElementById('login-page').style.display='flex';
   document.getElementById('app-container').classList.remove('visible');
   document.getElementById('login-username').value='';
@@ -156,7 +172,7 @@ function doChangePassword(){
   if(!oldPw||!newPw||!confirmPw){showToast('Please fill all fields');return;}
   if(newPw!==confirmPw){showToast('Passwords do not match');return;}
   fetch('/api/change-password?username='+encodeURIComponent(currentUser)+'&oldPassword='+encodeURIComponent(oldPw)+'&newPassword='+encodeURIComponent(newPw)+'&confirmPassword='+encodeURIComponent(confirmPw),{method:'POST'})
-  .then(function(r){return r.json()})
+  .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
   .then(function(data){
      if(data.success){
        showToast('Password changed successfully');
@@ -170,6 +186,15 @@ function doChangePassword(){
 var currentPage='dashboard';
 var pageTimers={};
 function loadPageContent(page){
+  var pagePerms={console:'console.view',players:'players.view',bans:'bans.view',whitelist:'whitelist.view',users:'users.view'};
+  var req=pagePerms[page];
+  if(req&&!hasPerm(req)){
+    document.querySelectorAll('.page.active').forEach(function(p){p.classList.remove('active')});
+    var t=document.getElementById('page-'+page);
+    t.innerHTML='<div class="page-content"><div class="empty" style="padding:4rem 1rem;">You are not able to see this</div></div>';
+    t.classList.add('active');
+    return;
+  }
   fetch('/pages/'+page+'.html')
   .then(function(r){return r.text()})
   .then(function(html){
@@ -177,7 +202,11 @@ function loadPageContent(page){
     var target=document.getElementById('page-'+page);
     if(target){target.innerHTML=html;target.classList.add('active');}
     currentPage=page;location.hash=page;clearPageTimers();
-    if(page==='dashboard'){loadPlayers();loadServerInfo();loadConsoleDash();pageTimers.p=setInterval(loadPlayers,5000);pageTimers.s=setInterval(loadServerInfo,5000);pageTimers.d=setInterval(loadConsoleDash,5000);}
+    if(page==='dashboard'){loadPlayers();loadServerInfo();loadConsoleDash();pageTimers.p=setInterval(loadPlayers,5000);pageTimers.s=setInterval(loadServerInfo,5000);pageTimers.d=setInterval(loadConsoleDash,5000);
+      setTimeout(function(){
+        if(!hasPerm('server.reload')){var b=document.querySelector('.icon-btn-reload');if(b)b.style.display='none';}
+        if(!hasPerm('server.stop')){var b=document.querySelector('.icon-btn-stop');if(b)b.style.display='none';}
+      },100);}
     if(page==='console'){loadConsole();pageTimers.c=setInterval(loadConsole,3000);}
     if(page==='players'){loadPlayers();pageTimers.p=setInterval(loadPlayers,5000);}
     if(page==='bans'){loadBans();pageTimers.b=setInterval(loadBans,10000);}
@@ -201,7 +230,7 @@ function clearPageTimers(){
 }
 function loadPlayers(){
   fetch('/api/players')
-  .then(function(r){return r.json()})
+  .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
   .then(function(data){
     if(data.success===false){
       var p=document.getElementById('players');if(p)p.innerHTML='<div class=\"empty\">Invalid or missing token.</div>';
@@ -226,15 +255,14 @@ function loadPlayers(){
         '</div>'+
       '</div>'+
       '<div style=\"display:flex;gap:0.375rem;flex-wrap:wrap;margin-top:0.5rem;align-items:center;\">'+
-        '<select class=\"gm-select\" onchange=\"playerAction(\''+p.name+'\',\'gamemode \'+this.value)\"><option value=\"\">GM...</option><option value=\"survival\">Survival</option><option value=\"creative\">Creative</option><option value=\"adventure\">Adventure</option><option value=\"spectator\">Spectator</option></select>'+
+        (hasPerm('player.ban')?'<select class=\"gm-select\" onchange=\"playerAction(\''+p.name+'\',\'gamemode \'+this.value)\"><option value=\"\">GM...</option><option value=\"survival\">Survival</option><option value=\"creative\">Creative</option><option value=\"adventure\">Adventure</option><option value=\"spectator\">Spectator</option></select>'+
         '<button class=\"btn btn-sm btn-accent-green\" onclick=\"playerAction(\''+p.name+'\',\'heal\')\">Heal</button>'+
         '<button class=\"btn btn-sm btn-accent-blue\" onclick=\"playerAction(\''+p.name+'\',\'feed\')\">Feed</button>'+
         '<button class=\"btn btn-sm btn-accent-pink\" onclick=\"playerAction(\''+p.name+'\',\'kill\')\">Kill</button>'+
-        '<span class=\"divider\"></span>'+
-        '<button class=\"btn btn-goto\" onclick=\"showGoToModal(\''+p.name+'\')\">Go To</button>'+
-        '<button class=\"btn btn-tp\" onclick=\"showTeleportModal(\''+p.name+'\')\">Teleport To</button>'+
-        '<button class=\"btn btn-kick\" onclick=\"kickPlayer(\''+p.name+'\')\">Kick</button>'+
-        '<button class=\"btn btn-ban\" onclick=\"banPlayer(\''+p.name+'\')\">Ban</button>'+
+        '<span class=\"divider\"></span>':'')+
+        (hasPerm('player.ban')?'<button class=\"btn btn-goto\" onclick=\"showGoToModal(\''+p.name+'\')\">Go To</button>'+'<button class=\"btn btn-tp\" onclick=\"showTeleportModal(\''+p.name+'\')\">Teleport To</button>':'')+
+        (hasPerm('player.kick')?'<button class=\"btn btn-kick\" onclick=\"kickPlayer(\''+p.name+'\')\">Kick</button>':'')+
+        (hasPerm('player.ban')?'<button class=\"btn btn-ban\" onclick=\"banPlayer(\''+p.name+'\')\">Ban</button>':'')+
       '</div>';
     });
     p.innerHTML=html||'<div class=\"empty\">No players online</div>';
@@ -244,19 +272,22 @@ function loadPlayers(){
 }
 function playerAction(player,action){
  fetch('/api/player-action?player='+encodeURIComponent(player)+'&action='+encodeURIComponent(action),{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);setTimeout(loadPlayers,300);});
 }
 function sendCommand(){
  var cmd=document.getElementById('console-cmd').value.trim();
  if(!cmd)return;
   fetch('/api/command?command='+encodeURIComponent(cmd),{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);document.getElementById('console-cmd').value='';setTimeout(loadConsole,500);});
 }
 function loadConsole(){
   fetch('/api/console?lines=50')
- .then(function(r){return r.json()})
+ .then(function(r){
+   if(r.status===403){var el=document.getElementById('console-full');if(el)el.textContent='You are not able to see this';return null;}
+   return r.json();
+ })
  .then(function(data){
    var el=document.getElementById('console-full');
     if(el)el.textContent=data.lines&&data.lines.length?data.lines.join('\n'):'The console is ready, waiting for new server output\u2026';
@@ -266,7 +297,10 @@ function loadConsole(){
 }
 function loadConsoleDash(){
   fetch('/api/console?lines=15')
- .then(function(r){return r.json()})
+ .then(function(r){
+   if(r.status===403){var el=document.getElementById('console-dash');if(el)el.textContent='You are not able to see this';return null;}
+   return r.json();
+ })
  .then(function(data){
    var el=document.getElementById('console-dash');
     if(el)el.textContent=data.lines&&data.lines.length?data.lines.join('\n'):'The console is ready, waiting for new server output\u2026';
@@ -274,7 +308,10 @@ function loadConsoleDash(){
 }
 function loadBans(){
   fetch('/api/bans')
- .then(function(r){return r.json()})
+ .then(function(r){
+   if(r.status===403){document.getElementById('ban-list').innerHTML='<div class="empty">You are not able to see this</div>';return null;}
+   return r.json();
+ })
  .then(function(data){
    if(data.success===false)return;
    var html='';
@@ -293,13 +330,16 @@ function loadBans(){
 function unbanPlayer(name){
   showConfirm('Unban Player','Are you sure you want to unban '+name+'?',function(){
     fetch('/api/unban?player='+encodeURIComponent(name),{method:'POST'})
-    .then(function(r){return r.json()})
+    .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
     .then(function(data){showToast(data.message);loadBans();});
   });
 }
 function loadWhitelist(){
   fetch('/api/whitelist')
- .then(function(r){return r.json()})
+ .then(function(r){
+   if(r.status===403){document.getElementById('wl-list').innerHTML='<div class="empty">You are not able to see this</div>';return null;}
+   return r.json();
+ })
  .then(function(data){
    if(data.success===false)return;
    var toggle=document.getElementById('wl-toggle');
@@ -320,48 +360,48 @@ function loadWhitelist(){
 }
 function toggleWhitelist(){
   fetch('/api/whitelist/toggle',{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);loadWhitelist();});
 }
 function addWhitelist(){
  var name=document.getElementById('wl-add-input').value.trim();
  if(!name){showToast('Please enter a player name');return;}
  fetch('/api/whitelist/add?player='+encodeURIComponent(name),{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);document.getElementById('wl-add-input').value='';loadWhitelist();});
 }
 function removeWhitelist(name){
   showConfirm('Remove from Whitelist','Are you sure you want to remove '+name+' from the whitelist?',function(){
     fetch('/api/whitelist/remove?player='+encodeURIComponent(name),{method:'POST'})
-    .then(function(r){return r.json()})
+    .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
     .then(function(data){showToast(data.message);loadWhitelist();});
   });
 }
 function kickPlayer(player){
   showConfirmWithReason('Kick Player','Are you sure you want to kick '+player+'?','Reason for kick\u2026',function(reason){
     fetch('/api/kick?player='+encodeURIComponent(player)+'&reason='+encodeURIComponent(reason),{method:'POST'})
-    .then(function(r){return r.json()})
+    .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
     .then(function(data){showToast(data.message);loadPlayers();});
   });
 }
 function banPlayer(player){
   showConfirmWithReason('Ban Player','Are you sure you want to ban '+player+'? They will be kicked from the server.','Reason for ban\u2026',function(reason){
     fetch('/api/ban?player='+encodeURIComponent(player)+'&reason='+encodeURIComponent(reason),{method:'POST'})
-    .then(function(r){return r.json()})
+    .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
     .then(function(data){showToast(data.message);loadPlayers();});
   });
 }
 function saveServer(){
  showToast('Saving world\u2026');
  fetch('/api/save',{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);});
 }
 function reloadServer(){
   showConfirm('Reload Server','Are you sure you want to reload the server?',function(){
     showToast('Reloading server\u2026');
     fetch('/api/reload',{method:'POST'})
-  .then(function(r){return r.json()})
+  .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
   .then(function(data){showToast(data.message);});
   });
 }
@@ -369,50 +409,50 @@ function stopServer(){
   showConfirm('Stop Server','The world will be saved automatically before shutdown. All players will be disconnected.',function(){
     showToast('Saving world then stopping\u2026');
     fetch('/api/stop',{method:'POST'})
-    .then(function(r){return r.json()})
+    .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
     .then(function(data){showToast(data.message);});
   });
 }
 function weatherClear(){
  showToast('Weather Clear\u2026');
  fetch('/api/clear',{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);});
 }
 function weatherRain(){
  showToast('Weather Rain\u2026');
  fetch('/api/rain',{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);});
 }
 function weatherThunder(){
  showToast('Weather Thunder\u2026');
  fetch('/api/thunder',{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);});
 }
 function timeDay(){
  showToast('Time Day\u2026');
  fetch('/api/day',{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);});
 }
 function timeNight(){
  showToast('Time Night\u2026');
  fetch('/api/night',{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);});
 }
 function timeNoon(){
  showToast('Time Noon\u2026');
  fetch('/api/noon',{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);});
 }
 function timeMidnight(){
  showToast('Time Midnight\u2026');
  fetch('/api/midnight',{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);});
 }
 var tpFromPlayer='';
@@ -431,7 +471,7 @@ function doTeleport(){
  if(!toPlayer){showToast('Please enter a target player name');return;}
  closeTeleportModal();
  fetch('/api/teleport?from='+encodeURIComponent(tpFromPlayer)+'&to='+encodeURIComponent(toPlayer),{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);});
 }
 document.getElementById('tp-modal').addEventListener('click',function(e){
@@ -453,7 +493,7 @@ function doGoTo(){
  if(!adminName){showToast('Please enter your player name');return;}
  closeGoToModal();
  fetch('/api/teleport?from='+encodeURIComponent(adminName)+'&to='+encodeURIComponent(gotoToPlayer),{method:'POST'})
- .then(function(r){return r.json()})
+ .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
  .then(function(data){showToast(data.message);});
 }
 document.getElementById('goto-modal').addEventListener('click',function(e){
@@ -465,7 +505,7 @@ document.addEventListener('keydown',function(e){
 });
 function loadServerInfo(){
   fetch('/api/server')
-  .then(function(r){return r.json()})
+  .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
   .then(function(data){
     if(data.success===false)return;
     if(data.motd) document.getElementById('server-motd').textContent=data.motd;
@@ -492,49 +532,67 @@ function formatUptime(seconds){
 }
 function loadUsers(){
   fetch('/api/users')
- .then(function(r){return r.json()})
+ .then(function(r){
+   if(r.status===403){document.getElementById('user-list').innerHTML='<div class="empty">You are not able to see this</div>';return null;}
+   return r.json();
+ })
  .then(function(data){
    if(data.success===false)return;
-   var html='';
-   if(!data.length){html='<div class=\"empty\">No users found</div>';}
-   else{
-     html+='<table class=\"tbl\"><thead><tr><th>Username</th><th></th></tr></thead><tbody>';
-     data.forEach(function(u){
-       html+='<tr><td>'+u.username+'</td>';
-        html+='<td style=\"display:flex;gap:0.375rem;\">';
-        html+='<button class=\"btn btn-sm btn-accent-blue\" onclick=\"showChangePassword(\''+u.username+'\')\">Password</button>';
-        html+='<button class=\"btn btn-sm btn-accent-red\" onclick=\"removeUser(\''+u.username+'\')\">Remove</button>';
-       html+='</td></tr>';
-     });
-     html+='</tbody></table>';
-   }
-   document.getElementById('user-list').innerHTML=html;
- }).catch(function(){});
+    var html='';
+    if(!data.length){html='<div class="empty">No users found</div>';}
+    else{
+      html+='<table class="tbl"><thead><tr><th>Username</th><th>Role</th><th></th></tr></thead><tbody>';
+      data.forEach(function(u){
+        html+='<tr><td>'+u.username+'</td><td style="text-transform:capitalize">'+u.role+'</td>';
+        if(u.role!=='owner'&&hasPerm('users.edit')){
+          html+='<td style="display:flex;gap:0.375rem;">';
+          html+='<select class="gm-select" onchange="editUserRole(\''+u.username+'\',this.value)" style="font-size:0.6875rem;"><option value="">Role…</option><option value="admin">Admin</option><option value="moderator">Moderator</option><option value="viewer">Viewer</option></select>';
+          html+='<button class="btn btn-sm btn-accent-blue" onclick="showChangePassword(\''+u.username+'\')">Password</button>';
+          if(hasPerm('users.delete'))html+='<button class="btn btn-sm btn-accent-red" onclick="removeUser(\''+u.username+'\')">Remove</button>';
+          html+='</td>';
+        }else{
+          html+='<td style="font-size:0.75rem;color:var(--text-muted);">Protected</td>';
+        }
+        html+='</tr>';
+      });
+      html+='</tbody></table>';
+    }
+    document.getElementById('user-list').innerHTML=html;
+  }).catch(function(){});
 }
 function addUser(){
- var n=document.getElementById('user-add-name').value.trim();
- var p=document.getElementById('user-add-pass').value.trim();
- if(!n||!p){showToast('Please enter username and password');return;}
- fetch('/api/users/add?username='+encodeURIComponent(n)+'&password='+encodeURIComponent(p),{method:'POST'})
- .then(function(r){return r.json()})
- .then(function(data){
-   showToast(data.message);
-   document.getElementById('user-add-name').value='';
-   document.getElementById('user-add-pass').value='';
-   loadUsers();
- });
+  var n=document.getElementById('user-add-name').value.trim();
+  var p=document.getElementById('user-add-pass').value.trim();
+  var r=document.getElementById('user-add-role').value;
+  if(!n||!p){showToast('Please enter username and password');return;}
+  fetch('/api/users/add?username='+encodeURIComponent(n)+'&password='+encodeURIComponent(p)+'&role='+encodeURIComponent(r),{method:'POST'})
+  .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
+  .then(function(data){
+    showToast(data.message);
+    document.getElementById('user-add-name').value='';
+    document.getElementById('user-add-pass').value='';
+    loadUsers();
+  });
+}
+function editUserRole(name,newRole){
+  if(!newRole)return;
+  showConfirm('Change Role','Set '+name+' role to '+newRole+'?',function(){
+    fetch('/api/users/edit?username='+encodeURIComponent(name)+'&role='+encodeURIComponent(newRole),{method:'POST'})
+    .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
+    .then(function(data){showToast(data.message);loadUsers();});
+  });
 }
 function removeUser(name){
   showConfirm('Remove User','Are you sure you want to remove user '+name+'?',function(){
     fetch('/api/users/remove?username='+encodeURIComponent(name),{method:'POST'})
-    .then(function(r){return r.json()})
+    .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
     .then(function(data){showToast(data.message);loadUsers();});
   });
 }
 function showChangePassword(name){
- var p=prompt('Enter new password for '+name+':');
- if(!p)return;
+  var p=prompt('Enter new password for '+name+':');
+  if(!p)return;
   fetch('/api/users/change-password?username='+encodeURIComponent(name)+'&password='+encodeURIComponent(p),{method:'POST'})
- .then(function(r){return r.json()})
- .then(function(data){showToast(data.message);loadUsers();});
+  .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
+  .then(function(data){showToast(data.message);loadUsers();});
 }

@@ -1,5 +1,5 @@
-name: ServerWebAdmin
-version: 1.2.1
+name: MinePanel
+version: 1.3.0
 main: me.flaxi.serverwebadmin.ServerWebAdmin
 author: Flaxi
 description: ServerWebAdmin is a lightweight Minecraft Spigot/Paper plugin that provides a web-based control panel
