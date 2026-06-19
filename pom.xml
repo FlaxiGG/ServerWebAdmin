@@ -5,8 +5,8 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>me.flaxi</groupId>
-  <artifactId>serverwebadmin</artifactId>
-  <version>1.2.0</version>
+  <artifactId>MinePanel</artifactId>
+  <version>1.2.1</version>
   <packaging>jar</packaging>
 
   <name>ServerWebAdmin</name>
