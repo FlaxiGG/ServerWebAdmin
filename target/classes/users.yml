@@ -1,0 +1,8 @@
+# Server Web Admin - User Accounts
+# Passwords are stored as BCrypt hashes
+# Default: owner / admin123 (must change on first login)
+users:
+  owner:
+    password: ""
+    role: owner
+    mustChangePassword: true

@@ -16,6 +16,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.mindrot.jbcrypt.BCrypt;
+import org.bstats.bukkit.Metrics;
 
 import java.io.File;
 import java.io.IOException;
@@ -32,6 +33,13 @@ public class ServerWebAdmin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        // You can find the plugin id of your plugins on
+        // the page https://bstats.org/what-is-my-plugin-id
+//        getLogger().info("Before bStats");
+        int pluginId = 32147; // TODO: Replace with your actual plugin ID
+        Metrics metrics = new Metrics(this, pluginId);
+//        getLogger().info("After bStats");
+
         tpsMonitor = new TpsMonitor();
         tpsMonitor.start(this);
 

@@ -1,0 +1,38 @@
+<div class="page-content">
+  <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-heading);margin-bottom:1.25rem;">User Management</h1>
+  <div class="card card-full">
+    <div class="card-header">
+      <span class="dot dot-purple" aria-hidden="true"></span>
+      <h2>Add User</h2>
+    </div>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end;">
+      <div style="flex:1;min-width:100px;">
+        <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:0.25rem;">Username</div>
+        <input id="user-add-name" class="input" type="text" autocomplete="off" spellcheck="false" placeholder="Username…" style="width:100%">
+      </div>
+      <div style="flex:1;min-width:100px;">
+        <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:0.25rem;">Password</div>
+        <input id="user-add-pass" class="input" type="password" autocomplete="off" spellcheck="false" placeholder="Password…" style="width:100%" onkeydown="if(event.key==='Enter')addUser()">
+      </div>
+      <div style="min-width:120px;">
+        <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:0.25rem;">Role</div>
+        <select id="user-add-role" class="gm-select" style="width:100%;padding:0.625rem 0.5rem;">
+          <option value="admin">Admin</option>
+          <option value="moderator">Moderator</option>
+          <option value="viewer" selected>Viewer</option>
+        </select>
+      </div>
+      <div>
+        <button class="btn btn-primary" onclick="addUser()" style="height:40px;">Add</button>
+      </div>
+    </div>
+  </div>
+  <div class="card card-full" style="margin-top:1rem;">
+    <div class="card-header">
+      <span class="dot dot-purple" aria-hidden="true"></span>
+      <h2>Users</h2>
+    </div>
+    <div id="user-list"><div class="empty">Loading…</div></div>
+  </div>
+</div>
+

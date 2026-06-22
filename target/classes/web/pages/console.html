@@ -1,0 +1,22 @@
+<div class="page-content">
+  <h1 class="page-title">Console Commands</h1>
+  <div class="card">
+    <div class="card-header">
+      <span class="dot dot-blue" aria-hidden="true"></span>
+      <h2>Run Command</h2>
+    </div>
+    <div class="token-row">
+      <input id="console-cmd" class="input" type="text" autocomplete="off" spellcheck="false"
+        placeholder="Enter command (e.g. say Hello)…" style="flex:1" onkeydown="if(event.key==='Enter')sendCommand()">
+      <button class="btn btn-primary" onclick="sendCommand()">Send</button>
+    </div>
+  </div>
+  <div class="card card-full" style="margin-top:1rem;">
+    <div class="card-header">
+      <span class="dot dot-blue" aria-hidden="true"></span>
+      <h2>Console Output</h2>
+      <span class="card-header-meta" id="console-line-count"></span>
+    </div>
+    <pre id="console-full" class="console" style="max-height:500px;">Loading…</pre>
+  </div>
+</div>
