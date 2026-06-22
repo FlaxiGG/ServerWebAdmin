@@ -14,7 +14,7 @@ var heartbeatTimer=null;
   fetch('/api/heartbeat').then(function(r){
     if(r.ok){
       try{permissions=JSON.parse(localStorage.getItem('adminPerms')||'[]');}catch(e){permissions=[];}
-      var pagePerms = {console:'console.view',players:'players.view',bans:'bans.view',whitelist:'whitelist.view',users:'users.view'};
+      var pagePerms = {console:'console.view',files:'files.view',players:'players.view',bans:'bans.view',whitelist:'whitelist.view',users:'users.view'};
       for(var page in pagePerms){
         if(!hasPerm(pagePerms[page])){
           var b=document.querySelector('.nav-btn[data-page="'+page+'"]');
@@ -186,7 +186,7 @@ function doChangePassword(){
 var currentPage='dashboard';
 var pageTimers={};
 function loadPageContent(page){
-  var pagePerms={console:'console.view',players:'players.view',bans:'bans.view',whitelist:'whitelist.view',users:'users.view'};
+  var pagePerms={console:'console.view',files:'files.view',players:'players.view',bans:'bans.view',whitelist:'whitelist.view',users:'users.view'};
   var req=pagePerms[page];
   if(req&&!hasPerm(req)){
     document.querySelectorAll('.page.active').forEach(function(p){p.classList.remove('active')});
@@ -210,7 +210,7 @@ function loadPageContent(page){
     if(page==='console'){loadConsole();pageTimers.c=setInterval(loadConsole,3000);}
     if(page==='players'){loadPlayers();pageTimers.p=setInterval(loadPlayers,5000);}
     if(page==='bans'){loadBans();pageTimers.b=setInterval(loadBans,10000);}
-    if(page==='whitelist')loadWhitelist();
+    if(page==='files'){loadFileList('');}
     if(page==='users'){loadUsers();pageTimers.u=setInterval(loadUsers,30000);}
   });
 }
@@ -220,7 +220,7 @@ function switchPage(page){
  loadPageContent(page);
 }
 var hash=location.hash.replace('#','');
-if(hash&&['dashboard','console','players','bans','whitelist','users'].indexOf(hash)!==-1){
+if(hash&&['dashboard','console','files','players','bans','whitelist','users'].indexOf(hash)!==-1){
  currentPage=hash;
  document.querySelector('.nav-btn.active').classList.remove('active');
  document.querySelector('.nav-btn[data-page=\"'+hash+'\"]').classList.add('active');
@@ -595,4 +595,173 @@ function showChangePassword(name){
   fetch('/api/users/change-password?username='+encodeURIComponent(name)+'&password='+encodeURIComponent(p),{method:'POST'})
   .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
   .then(function(data){showToast(data.message);loadUsers();});
+}
+
+/* === FILE MANAGER === */
+
+var currentFilePath='';
+var currentFileName='';
+
+function loadFileList(path){
+  currentFilePath=path||'';
+  fetch('/api/files/list?path='+encodeURIComponent(currentFilePath))
+  .then(function(r){if(r.status===403){document.getElementById('file-list').innerHTML='<div class="empty">You are not able to see this</div>';return null;}return r.json();})
+  .then(function(data){
+    if(!data||!data.success)return;
+    renderBreadcrumb(data.currentPath,data.parentPath);
+    var html='';
+    if(data.parentPath!==undefined&&data.parentPath!==null&&data.parentPath!=='/'){
+      html+='<div class="file-row" onclick="loadFileList(\''+data.parentPath+'\')">'+
+        '<div class="file-icon" style="font-size:1.2rem;">&#x1F4C1;</div>'+
+        '<div class="file-name">..</div><div class="file-meta">Parent</div></div>';
+    }
+    var hasDel=hasPerm('files.delete'),hasRen=hasPerm('files.rename'),
+        hasRead=hasPerm('files.read'),hasEdit=hasPerm('files.edit'),
+        hasDown=hasPerm('files.download');
+    if(data.files)data.files.forEach(function(f){
+      var icon=f.isDir?'&#x1F4C1;':'&#x1F4C4;';
+      html+='<div class="file-row" onclick="'+(
+        f.isDir?('loadFileList(\''+(data.currentPath?data.currentPath+'/':'')+f.name+'\')'):
+        '')+'">'+
+        '<div class="file-icon">'+icon+'</div>'+
+        '<div class="file-name">'+f.name+'</div>'+
+        '<div class="file-meta">'+(f.isDir?'':formatFileSize(f.size))+'</div>'+
+        '<div class="file-actions" onclick="event.stopPropagation()">';
+      if(!f.isDir){
+        if(hasRead)html+='<button class="btn btn-sm" style="background:var(--bg-input);color:var(--text);" onclick="viewFile(\''+(data.currentPath?data.currentPath+'/':'')+f.name+'\',\''+f.name+'\')">View</button>';
+        if(hasEdit)html+='<button class="btn btn-sm" style="background:var(--bg-input);color:var(--text);" onclick="editFile(\''+(data.currentPath?data.currentPath+'/':'')+f.name+'\',\''+f.name+'\')">Edit</button>';
+        if(hasDown)html+='<button class="btn btn-sm" style="background:var(--bg-input);color:var(--text);" onclick="downloadFile(\''+(data.currentPath?data.currentPath+'/':'')+f.name+'\')">Download</button>';
+      }
+      if(hasRen)html+='<button class="btn btn-sm" style="background:var(--bg-input);color:var(--text);" onclick="showRenamePrompt(\''+(data.currentPath?data.currentPath+'/':'')+f.name+'\',\''+f.name+'\')">Rename</button>';
+      if(hasDel)html+='<button class="btn btn-sm btn-danger" onclick="deleteFileConfirm(\''+(data.currentPath?data.currentPath+'/':'')+f.name+'\')">Delete</button>';
+      html+='</div></div>';
+    });
+    document.getElementById('file-list').innerHTML=html||'<div class="file-empty">This folder is empty</div>';
+  }).catch(function(){});
+}
+
+function renderBreadcrumb(currentPath,parentPath){
+  var html='<span onclick="loadFileList(\'\')">&#x1F3E0;</span> <span class="sep">&rsaquo;</span> ';
+  if(!currentPath){html+='<span class="current">/</span>';}
+  else {
+    var parts=currentPath.split('/');
+    var cum='';
+    for(var i=0;i<parts.length;i++){
+      cum+=(cum?'/':'')+parts[i];
+      if(i===parts.length-1)html+='<span class="current">'+parts[i]+'</span>';
+      else html+='<span onclick="loadFileList(\''+cum+'\')" class="file-link">'+parts[i]+'</span> <span class="sep">&rsaquo;</span> ';
+    }
+  }
+  document.getElementById('file-breadcrumb').innerHTML=html;
+}
+
+function formatFileSize(bytes){
+  if(bytes<1024)return bytes+' B';
+  if(bytes<1048576)return (bytes/1024).toFixed(1)+' KB';
+  return (bytes/1048576).toFixed(1)+' MB';
+}
+
+function viewFile(path,name){
+  fetch('/api/files/read?path='+encodeURIComponent(path))
+  .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
+  .then(function(data){
+    if(!data||!data.success){showToast(data.message||'Failed to read file');return;}
+    document.getElementById('file-viewer-title').textContent=name;
+    generateLineNumbers('viewer-textarea','viewer-gutter',data.content);
+    document.getElementById('file-viewer-modal').classList.add('show');
+  });
+}
+
+function editFile(path,name){
+  currentFilePath=path;currentFileName=name;
+  fetch('/api/files/read?path='+encodeURIComponent(path))
+  .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
+  .then(function(data){
+    if(!data||!data.success){showToast(data.message||'Failed to read file');return;}
+    document.getElementById('file-editor-status').textContent='Editing: '+name+' ('+formatFileSize(data.size)+')';
+    generateLineNumbers('editor-textarea','editor-gutter',data.content);
+    document.getElementById('file-editor-modal').classList.add('show');
+    setTimeout(function(){document.getElementById('editor-textarea').focus()},200);
+  });
+}
+
+function generateLineNumbers(textareaId,gutterId,content){
+  var lines=content.split('\n');
+  var ta=document.getElementById(textareaId);
+  ta.value=content;
+  ta.rows=Math.max(15,lines.length);
+  var num='';
+  for(var i=1;i<=lines.length;i++)num+=i+'\n';
+  document.getElementById(gutterId).textContent=num;
+  // Sync scroll
+  ta.onscroll=function(){
+    document.getElementById(gutterId).scrollTop=ta.scrollTop;
+  };
+}
+
+function saveFile(){
+  var ta=document.getElementById('editor-textarea');
+  var content=ta.value;
+  var body=JSON.stringify({path:currentFilePath,content:content});
+  fetch('/api/files/save',{method:'POST',body:body})
+  .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
+  .then(function(data){
+    if(data&&data.success){showToast('File saved');closeFileEditor();loadFileList(currentFilePath.replace(/\/[^\/]*$/,''));}
+    else showToast(data.message||'Save failed');
+  }).catch(function(){showToast('Save failed');});
+}
+
+function closeFileViewer(){
+  document.getElementById('file-viewer-modal').classList.remove('show');
+}
+
+function closeFileEditor(){
+  document.getElementById('file-editor-modal').classList.remove('show');
+}
+
+function downloadFile(path){
+  window.open('/api/files/download?path='+encodeURIComponent(path),'_blank');
+}
+
+function uploadFile(input){
+  var file=input.files[0];
+  if(!file)return;
+  if(file.size>5242880){showToast('File too large (max 5MB)');return;}
+  var form=new FormData();
+  form.append('file',file);
+  form.append('path',currentFilePath);
+  var btn=document.getElementById('upload-btn');
+  btn.disabled=true;btn.textContent='Uploading…';
+  fetch('/api/files/upload?path='+encodeURIComponent(currentFilePath),{method:'POST',body:form})
+  .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
+  .then(function(data){
+    btn.disabled=false;btn.textContent='Upload';
+    showToast(data.message);loadFileList(currentFilePath);
+  }).catch(function(){btn.disabled=false;btn.textContent='Upload';showToast('Upload failed');});
+  input.value='';
+}
+
+function showNewFolderPrompt(){
+  showConfirmWithReason('New Folder','Enter a name for the new folder:','Folder name\u2026',function(name){
+    fetch('/api/files/mkdir?path='+encodeURIComponent((currentFilePath?currentFilePath+'/':'')+name),{method:'POST'})
+    .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
+    .then(function(data){showToast(data.message);loadFileList(currentFilePath);});
+  });
+}
+
+function showRenamePrompt(oldPath,oldName){
+  showConfirmWithReason('Rename','Rename '+oldName+' to:','New name\u2026',function(name){
+    if(name===oldName)return;
+    fetch('/api/files/rename?old='+encodeURIComponent(oldPath)+'&new='+encodeURIComponent(name),{method:'POST'})
+    .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
+    .then(function(data){showToast(data.message);loadFileList(currentFilePath);});
+  });
+}
+
+function deleteFileConfirm(path){
+  showConfirm('Delete','Are you sure you want to delete this?',function(){
+    fetch('/api/files/delete?path='+encodeURIComponent(path),{method:'POST'})
+    .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
+    .then(function(data){showToast(data.message);loadFileList(currentFilePath);});
+  });
 }

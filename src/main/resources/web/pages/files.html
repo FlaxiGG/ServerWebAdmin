@@ -1,0 +1,49 @@
+<div class="page-content">
+  <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-heading);margin-bottom:1.25rem;">File Manager</h1>
+
+  <!-- Action Bar -->
+  <div class="file-actions-bar">
+    <button class="btn btn-primary btn-sm" onclick="document.getElementById('file-upload-input').click()" id="upload-btn">Upload</button>
+    <input type="file" id="file-upload-input" style="display:none" onchange="uploadFile(this)">
+    <button class="btn btn-sm" style="background:var(--bg-input);color:var(--text);" onclick="showNewFolderPrompt()">New Folder</button>
+    <button class="btn btn-sm" style="background:var(--bg-input);color:var(--text);" onclick="loadFileList(currentFilePath)">Refresh</button>
+  </div>
+
+  <!-- Breadcrumb -->
+  <div class="breadcrumb" id="file-breadcrumb"></div>
+
+  <!-- File List -->
+  <div id="file-list"><div class="empty">Loading…</div></div>
+</div>
+
+<!-- File Viewer Modal -->
+<div id="file-viewer-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="file-viewer-title">
+  <div class="modal" style="max-width:800px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="file-actions-bar" style="justify-content:space-between;">
+      <h3 id="file-viewer-title" style="margin:0;"></h3>
+      <button class="btn btn-sm" style="background:var(--modal-cancel-bg);color:var(--text);" onclick="closeFileViewer()">Close</button>
+    </div>
+    <div class="editor-wrap" style="flex:1;overflow:auto;">
+      <div class="editor-gutter" id="viewer-gutter"></div>
+      <textarea id="viewer-textarea" class="editor-textarea" readonly style="min-height:300px;"></textarea>
+    </div>
+    <div class="file-actions-bar" style="justify-content:flex-end;">
+      <button class="btn btn-sm" style="background:var(--modal-cancel-bg);color:var(--text);" onclick="closeFileViewer()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- File Editor Modal -->
+<div id="file-editor-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="file-editor-title">
+  <div class="modal" style="max-width:800px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="editor-status" id="file-editor-status"></div>
+    <div class="editor-wrap" style="flex:1;overflow:auto;">
+      <div class="editor-gutter" id="editor-gutter"></div>
+      <textarea id="editor-textarea" class="editor-textarea" spellcheck="false"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" style="background:var(--modal-cancel-bg);color:var(--text);" onclick="closeFileEditor()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveFile()">Save</button>
+    </div>
+  </div>
+</div>

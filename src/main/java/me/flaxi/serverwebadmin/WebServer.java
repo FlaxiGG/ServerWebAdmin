@@ -17,6 +17,7 @@ import org.bukkit.entity.Player;
 import org.mindrot.jbcrypt.BCrypt;
 
 import java.io.*;
+import java.nio.file.*;
 import java.util.*;
 
 import java.lang.management.ManagementFactory;
@@ -63,6 +64,8 @@ public class WebServer extends NanoHTTPD {
             "weather.clear", "weather.rain", "weather.thunder",
             "time.day", "time.noon", "time.night", "time.midnight",
             "bans.view",
+            "files.view", "files.read", "files.edit", "files.upload",
+            "files.download", "files.delete", "files.rename", "files.mkdir",
             "users.view", "users.create", "users.edit", "users.delete",
             "server.reload", "server.stop"
         ));
@@ -73,7 +76,8 @@ public class WebServer extends NanoHTTPD {
             "whitelist.view", "whitelist.add", "whitelist.remove",
             "weather.clear", "weather.rain", "weather.thunder",
             "time.day", "time.noon", "time.night", "time.midnight",
-            "bans.view"
+            "bans.view",
+            "files.view", "files.read", "files.edit", "files.download"
         )));
         ROLE_PERMISSIONS.put("moderator", new HashSet<>(Arrays.asList(
             "dashboard.view", "console.view", "players.view", "player.kick"
@@ -986,6 +990,198 @@ public class WebServer extends NanoHTTPD {
             return json("{\"success\":true,\"message\":\"Removed " + playerName + " from whitelist\"}");
         }
 
+        // === FILE MANAGER ===
+
+        if (uri.equals("/api/files/list") && method == Method.GET) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "files.view")) return forbidden();
+
+            String path = session.getParms().get("path");
+            if (path == null) path = "";
+            File dir = resolvePath(path);
+            if (dir == null || !dir.exists() || !dir.isDirectory()) {
+                return json("{\"success\":false,\"message\":\"Directory not found\"}");
+            }
+
+            File[] children = dir.listFiles();
+            StringBuilder sb = new StringBuilder("{\"success\":true,\"currentPath\":\"" + escapeJson(path) + "\",");
+            try {
+                File root = Bukkit.getWorldContainer().getParentFile();
+                if (root == null) root = new File(".");
+                root = new File(root, "").getCanonicalFile();
+                String par = root.toPath().relativize(dir.getParentFile() != null ? dir.getParentFile().toPath() : dir.toPath()).toString().replace("\\", "/");
+                if (par.isEmpty()) par = "";
+                sb.append("\"parentPath\":\"" + escapeJson(par) + "\",");
+            } catch (Exception e) {
+                sb.append("\"parentPath\":\"\",");
+            }
+            sb.append("\"files\":[");
+            if (children != null) {
+                Arrays.sort(children, (a, b) -> {
+                    if (a.isDirectory() && !b.isDirectory()) return -1;
+                    if (!a.isDirectory() && b.isDirectory()) return 1;
+                    return a.getName().compareToIgnoreCase(b.getName());
+                });
+                for (int i = 0; i < children.length; i++) {
+                    if (i > 0) sb.append(",");
+                    File f = children[i];
+                    sb.append("{\"name\":\"" + escapeJson(f.getName()) + "\",")
+                            .append("\"isDir\":" + f.isDirectory() + ",")
+                            .append("\"size\":" + (f.isDirectory() ? 0 : f.length()) + "}");
+                }
+            }
+            sb.append("]}");
+            return json(sb.toString());
+        }
+
+        if (uri.equals("/api/files/read") && method == Method.GET) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "files.read")) return forbidden();
+
+            String path = session.getParms().get("path");
+            if (path == null || path.isEmpty()) return json("{\"success\":false,\"message\":\"Missing path\"}");
+            File file = resolvePath(path);
+            if (file == null || !file.exists() || file.isDirectory()) return json("{\"success\":false,\"message\":\"File not found\"}");
+            if (!isAllowedTextFile(file)) return json("{\"success\":false,\"message\":\"File type not supported for reading\"}");
+            if (file.length() > 1_048_576) return json("{\"success\":false,\"message\":\"File too large to view (max 1MB)\"}");
+
+            try {
+                String content = new Scanner(file, "UTF-8").useDelimiter("\\A").next();
+                return json("{\"success\":true,\"content\":\"" + escapeJson(content) + "\",\"size\":" + file.length() + "}");
+            } catch (Exception e) {
+                return json("{\"success\":false,\"message\":\"Error reading file\"}");
+            }
+        }
+
+        if (uri.equals("/api/files/save") && method == Method.POST) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "files.edit")) return forbidden();
+
+            String body = readPostBody(session);
+            String path = extractJsonValue(body, "path");
+            String content = extractJsonValue(body, "content");
+            if (path == null || content == null) return json("{\"success\":false,\"message\":\"Missing path or content\"}");
+
+            File file = resolvePath(path);
+            if (file == null) return json("{\"success\":false,\"message\":\"Invalid path\"}");
+            if (isBlockedExtension(file)) return json("{\"success\":false,\"message\":\"Cannot edit this file type\"}");
+
+            try {
+                FileWriter fw = new FileWriter(file);
+                fw.write(content);
+                fw.close();
+                return json("{\"success\":true,\"message\":\"File saved\"}");
+            } catch (IOException e) {
+                return json("{\"success\":false,\"message\":\"Error saving file\"}");
+            }
+        }
+
+        if (uri.equals("/api/files/download") && method == Method.GET) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "files.download")) return forbidden();
+
+            String path = session.getParms().get("path");
+            if (path == null || path.isEmpty()) return json("{\"success\":false,\"message\":\"Missing path\"}");
+            File file = resolvePath(path);
+            if (file == null || !file.exists() || file.isDirectory()) return json("{\"success\":false,\"message\":\"File not found\"}");
+
+            try {
+                String mime = "application/octet-stream";
+                FileInputStream fis = new FileInputStream(file);
+                Response resp = newChunkedResponse(Response.Status.OK, mime, fis);
+                resp.addHeader("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"");
+                return resp;
+            } catch (IOException e) {
+                return json("{\"success\":false,\"message\":\"Error downloading file\"}");
+            }
+        }
+
+        if (uri.equals("/api/files/upload") && method == Method.POST) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "files.upload")) return forbidden();
+
+            try {
+                Map<String, String> filesMap = new HashMap<>();
+                session.parseBody(filesMap);
+                String tmpPath = filesMap.get("file");
+                if (tmpPath == null) return json("{\"success\":false,\"message\":\"No file uploaded\"}");
+
+                File tmp = new File(tmpPath);
+                if (!tmp.exists() || tmp.length() > 5_242_880) {
+                    return json("{\"success\":false,\"message\":\"File too large (max 5MB)\"}");
+                }
+
+                String uploadName = new File(tmpPath).getName();
+                String destPath = session.getParms().get("path");
+                if (destPath == null) destPath = "";
+                File destDir = resolvePath(destPath);
+                if (destDir == null || !destDir.isDirectory()) {
+                    // Try using the raw file name from temp
+                    String rawName = filesMap.containsKey("content-disposition") ? filesMap.get("content-disposition") : null;
+                    if (rawName != null && rawName.contains("filename=\"")) {
+                        uploadName = rawName.substring(rawName.indexOf("filename=\"") + 10);
+                        uploadName = uploadName.substring(0, uploadName.indexOf("\""));
+                    }
+                    destDir = resolvePath(destPath != null ? destPath : "");
+                }
+
+                File dest = new File(destDir, uploadName);
+                if (isBlockedExtension(dest)) return json("{\"success\":false,\"message\":\"Cannot upload this file type\"}");
+
+                java.nio.file.Files.copy(tmp.toPath(), dest.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                tmp.delete();
+                return json("{\"success\":true,\"message\":\"File uploaded\"}");
+            } catch (Exception e) {
+                return json("{\"success\":false,\"message\":\"Upload failed: " + e.getMessage() + "\"}");
+            }
+        }
+
+        if (uri.equals("/api/files/mkdir") && method == Method.POST) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "files.mkdir")) return forbidden();
+
+            String path = session.getParms().get("path");
+            if (path == null || path.isEmpty()) return json("{\"success\":false,\"message\":\"Missing path\"}");
+            File dir = resolvePath(path);
+            if (dir == null) return json("{\"success\":false,\"message\":\"Invalid path\"}");
+            if (dir.exists()) return json("{\"success\":false,\"message\":\"Already exists\"}");
+            if (dir.mkdirs()) return json("{\"success\":true,\"message\":\"Folder created\"}");
+            return json("{\"success\":false,\"message\":\"Cannot create folder\"}");
+        }
+
+        if (uri.equals("/api/files/rename") && method == Method.POST) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "files.rename")) return forbidden();
+
+            String oldPath = session.getParms().get("old");
+            String newName = session.getParms().get("new");
+            if (oldPath == null || newName == null || oldPath.isEmpty() || newName.isEmpty())
+                return json("{\"success\":false,\"message\":\"Missing parameters\"}");
+
+            File oldFile = resolvePath(oldPath);
+            if (oldFile == null || !oldFile.exists()) return json("{\"success\":false,\"message\":\"File not found\"}");
+            File newFile = new File(oldFile.getParentFile(), newName);
+            if (isBlockedExtension(newFile)) return json("{\"success\":false,\"message\":\"Cannot rename to this file type\"}");
+
+            if (oldFile.renameTo(newFile)) return json("{\"success\":true,\"message\":\"Renamed\"}");
+            return json("{\"success\":false,\"message\":\"Rename failed\"}");
+        }
+
+        if (uri.equals("/api/files/delete") && method == Method.POST) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "files.delete")) return forbidden();
+
+            String path = session.getParms().get("path");
+            if (path == null || path.isEmpty()) return json("{\"success\":false,\"message\":\"Missing path\"}");
+            File file = resolvePath(path);
+            if (file == null || !file.exists()) return json("{\"success\":false,\"message\":\"File not found\"}");
+            if (isServerJar(file.getName())) return json("{\"success\":false,\"message\":\"Cannot delete server jar\"}");
+
+            boolean deleted = file.isDirectory() ? deleteDir(file) : file.delete();
+            if (deleted) return json("{\"success\":true,\"message\":\"Deleted\"}");
+            return json("{\"success\":false,\"message\":\"Delete failed\"}");
+        }
+
         if (uri.startsWith("/css/") || uri.startsWith("/js/") || uri.startsWith("/pages/")) {
             String mime = "text/plain";
             if (uri.endsWith(".css")) mime = "text/css";
@@ -995,6 +1191,82 @@ public class WebServer extends NanoHTTPD {
         }
 
         return serveResource("index.html", "text/html");
+    }
+
+    // === FILE MANAGER HELPERS ===
+
+    private File resolvePath(String requestPath) {
+        try {
+            File root = Bukkit.getWorldContainer().getParentFile();
+            if (root == null) root = new File(".");
+            if (requestPath.startsWith("/") || requestPath.startsWith("\\")) requestPath = requestPath.substring(1);
+            File target = new File(root, requestPath).getCanonicalFile();
+            if (!target.getPath().startsWith(root.getCanonicalPath())) return null;
+            return target;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private boolean isAllowedTextFile(File file) {
+        String name = file.getName().toLowerCase();
+        return name.endsWith(".txt") || name.endsWith(".yml") || name.endsWith(".yaml")
+                || name.endsWith(".json") || name.endsWith(".properties")
+                || name.endsWith(".log") || name.endsWith(".conf")
+                || name.endsWith(".toml") || name.endsWith(".xml") || name.endsWith(".env");
+    }
+
+    private boolean isBlockedExtension(File file) {
+        String name = file.getName().toLowerCase();
+        return name.endsWith(".jar") || name.endsWith(".class") || name.endsWith(".exe")
+                || name.endsWith(".bat") || name.endsWith(".sh") || name.endsWith(".dll");
+    }
+
+    private boolean isServerJar(String name) {
+        String n = name.toLowerCase();
+        return n.equals("paper.jar") || n.equals("spigot.jar") || n.equals("server.jar")
+                || n.equals("bukkit.jar") || n.equals("craftbukkit.jar");
+    }
+
+    private String readPostBody(IHTTPSession session) {
+        try {
+            long len = Long.parseLong(session.getHeaders().getOrDefault("content-length", "0"));
+            if (len > 10_000_000) return "";
+            byte[] buf = new byte[(int) len];
+            int total = 0;
+            InputStream in = session.getInputStream();
+            while (total < len) {
+                int r = in.read(buf, total, (int) len - total);
+                if (r == -1) break;
+                total += r;
+            }
+            return new String(buf, 0, total, "UTF-8");
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private String extractJsonValue(String json, String key) {
+        String search = "\"" + key + "\":\"";
+        int start = json.indexOf(search);
+        if (start == -1) return null;
+        start += search.length();
+        int end = start;
+        while (end < json.length()) {
+            if (json.charAt(end) == '"' && (end == 0 || json.charAt(end - 1) != '\\')) break;
+            end++;
+        }
+        return end > start ? json.substring(start, end).replace("\\\"", "\"").replace("\\\\", "\\").replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t") : null;
+    }
+
+    private boolean deleteDir(File dir) {
+        File[] children = dir.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                if (child.isDirectory()) { deleteDir(child); } else { child.delete(); }
+            }
+        }
+        return dir.delete();
     }
 
     private Response serveResource(String resourcePath, String mimeType) {

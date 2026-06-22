@@ -527,3 +527,38 @@ body.dark .badge-blue{background:#1a2030;color:#6a8a9a}
 @media(prefers-reduced-motion:reduce){
   .card,.btn,.toast,.modal-overlay,.modal{transition:none}
 }
+
+/* === FILE BROWSER === */
+.breadcrumb{display:flex;align-items:center;gap:0.25rem;flex-wrap:wrap;font-size:0.8125rem;margin-bottom:1rem;padding:0.625rem 0.875rem;background:var(--bg-input);border-radius:10px;border:1px solid var(--border)}
+.breadcrumb a,.breadcrumb span{color:var(--text-muted);text-decoration:none;cursor:pointer;white-space:nowrap}
+.breadcrumb a:hover{color:var(--text-heading)}
+.breadcrumb .sep{color:var(--text-muted);margin:0 0.125rem}
+.breadcrumb .current{color:var(--text-heading);font-weight:600}
+.file-actions-bar{display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap}
+.file-row{display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0.75rem;border-radius:8px;cursor:pointer;transition:background .12s ease;border:1px solid transparent}
+.file-row:hover{background:var(--bg-player);border-color:var(--border-divider)}
+.file-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.1rem;background:var(--bg-input);color:var(--text-muted)}
+.file-name{flex:1;min-width:0;font-size:0.875rem;font-weight:500;color:var(--text-heading);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-meta{font-size:0.6875rem;color:var(--text-muted);flex-shrink:0}
+.file-actions{display:flex;gap:0.25rem;flex-shrink:0}
+.file-actions .btn{padding:0.25rem 0.5rem;font-size:0.6875rem}
+.file-empty{text-align:center;padding:2rem;color:var(--text-muted);font-size:0.875rem}
+
+/* === CODE EDITOR === */
+.editor-wrap{display:flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg-input)}
+.editor-gutter{width:44px;flex-shrink:0;background:var(--bg-sidebar-active);text-align:right;padding:0.75rem 0.5rem;font-family:'SF Mono',Consolas,monospace;font-size:0.75rem;color:var(--text-muted);line-height:1.6;user-select:none;overflow:hidden}
+.editor-textarea{flex:1;padding:0.75rem;border:none;background:transparent;color:var(--text);font-family:'SF Mono',Consolas,monospace;font-size:0.8125rem;line-height:1.6;resize:none;outline:none;min-height:300px;tab-size:2}
+body.dark .editor-textarea{color:var(--text)}
+.editor-status{font-size:0.6875rem;color:var(--text-muted);margin-bottom:0.75rem}
+
+/* === FILE UPLOAD === */
+.upload-zone{border:2px dashed var(--border);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:border-color .15s ease,background .15s ease;margin-bottom:1rem}
+.upload-zone:hover{border-color:var(--text-muted);background:var(--bg-player)}
+.upload-zone input[type=file]{display:none}
+
+/* === RESPONSIVE === */
+@media(max-width:768px){
+  .file-actions .btn{padding:0.25rem 0.375rem;font-size:0.625rem}
+  .editor-wrap{flex-direction:column}
+  .editor-gutter{display:none}
+}
