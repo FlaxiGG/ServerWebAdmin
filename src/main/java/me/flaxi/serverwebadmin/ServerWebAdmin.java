@@ -30,6 +30,8 @@ public class ServerWebAdmin extends JavaPlugin {
     private TpsMonitor tpsMonitor;
     private File usersFile;
     private YamlConfiguration usersConfig;
+    private ConfigManager configManager;
+    private volatile boolean restarting = false;
 
     @Override
     public void onEnable() {
@@ -46,6 +48,7 @@ public class ServerWebAdmin extends JavaPlugin {
         getLogger().info("ServerWebAdmin Enabled!");
 
         saveDefaultConfig();
+        configManager = new ConfigManager(this);
 
         String host = getConfig().getString("web.host", "0.0.0.0");
         int port = getConfig().getInt("web.port", 8080);
@@ -121,6 +124,55 @@ public class ServerWebAdmin extends JavaPlugin {
                 getLogger().severe("Fallback also failed: " + ex.getMessage());
             }
         }
+    }
+
+    public ConfigManager getConfigManager() { return configManager; }
+
+    public boolean isRestarting() { return restarting; }
+
+    public void scheduleRestart(int delayTicks) {
+        if (restarting) {
+            getLogger().warning("Web server restart already in progress, skipping.");
+            return;
+        }
+        restarting = true;
+        Bukkit.getScheduler().runTaskLater(this, new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    restartWebServer();
+                } finally {
+                    restarting = false;
+                }
+            }
+        }, delayTicks);
+        getLogger().info("Web server restart scheduled in " + (delayTicks / 20.0) + " seconds");
+    }
+
+    private void restartWebServer() {
+        Map<String, WebServer.UserInfo> users = loadUsers();
+        Map<String, String> alerts = new HashMap<>();
+        alerts.put("kick", configManager.getAlert("kick", "You have been kicked by Web Admin."));
+        alerts.put("ban_reason", configManager.getAlert("ban_reason", "Banned by Web Admin"));
+        alerts.put("ban_kick", configManager.getAlert("ban_kick", "You have been banned by Web Admin."));
+
+        String host = configManager.getWebHost();
+        int port = configManager.getWebPort();
+        boolean external = configManager.getAllowExternal();
+        boolean fallback = configManager.getFallbackToAny();
+        int timeout = configManager.getSessionTimeout();
+        if (timeout < 1) timeout = 5;
+
+        if (!external) host = "127.0.0.1";
+        if ("localhost".equalsIgnoreCase(host)) host = "127.0.0.1";
+        if ("auto".equalsIgnoreCase(host)) host = detectBestHost();
+        if (isPublicIp(host)) host = "0.0.0.0";
+
+        if (webServer != null) {
+            webServer.stop();
+            webServer = null;
+        }
+        startServer(host, port, timeout, users, alerts, fallback);
     }
 
     public Map<String, WebServer.UserInfo> loadUsers() {

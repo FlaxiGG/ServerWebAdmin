@@ -1,0 +1,121 @@
+<div class="page-content">
+  <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-heading);margin-bottom:1.25rem;">Settings</h1>
+
+  <!-- Tab Navigation -->
+  <div class="settings-tabs" id="settings-tabs">
+    <button class="settings-tab active" onclick="switchSettingsTab('web')">Web Server</button>
+    <button class="settings-tab" onclick="switchSettingsTab('alerts')">Alerts</button>
+    <button class="settings-tab" onclick="switchSettingsTab('security')">Security</button>
+    <button class="settings-tab" onclick="switchSettingsTab('account')">Account</button>
+  </div>
+
+  <!-- Web Server Tab -->
+  <div class="settings-panel active" id="panel-web">
+    <div class="card card-full">
+      <div class="card-header"><h2>Web Server Configuration</h2></div>
+      <div class="settings-form">
+        <div class="settings-field">
+          <label class="settings-label">Host</label>
+          <select id="s-web-host" class="gm-select" style="width:100%;padding:0.625rem;">
+            <option value="0.0.0.0">0.0.0.0 (All Interfaces)</option>
+            <option value="127.0.0.1">127.0.0.1 (Localhost Only)</option>
+            <option value="auto">Auto Detect</option>
+          </select>
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Port (1024-65535)</label>
+          <input id="s-web-port" class="input" type="number" min="1024" max="65535" style="width:100%">
+        </div>
+        <div class="settings-field settings-row">
+          <span class="settings-label">Allow External Access</span>
+          <button id="s-web-external" class="toggle-sw on" onclick="this.classList.toggle('on')"></button>
+        </div>
+        <div class="settings-field settings-row">
+          <span class="settings-label">Fallback To Any</span>
+          <button id="s-web-fallback" class="toggle-sw on" onclick="this.classList.toggle('on')"></button>
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Session Timeout (minutes)</label>
+          <input id="s-web-timeout" class="input" type="number" min="1" max="1440" style="width:100%">
+        </div>
+      </div>
+      <div class="settings-note" style="color:#e49494;font-size:0.75rem;margin-bottom:1rem;">
+        ⚠ Saving web server settings will restart the web server. Sessions will be lost.
+      </div>
+      <button class="btn btn-primary" onclick="saveWebSettings()">Save & Restart Server</button>
+    </div>
+  </div>
+
+  <!-- Alerts Tab -->
+  <div class="settings-panel" id="panel-alerts">
+    <div class="card card-full">
+      <div class="card-header"><h2>Alert Messages</h2></div>
+      <div class="settings-form">
+        <div class="settings-field">
+          <label class="settings-label">Kick Message</label>
+          <input id="s-alert-kick" class="input" type="text" style="width:100%" placeholder="You have been kicked by Web Admin.">
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Ban Reason</label>
+          <input id="s-alert-ban-reason" class="input" type="text" style="width:100%" placeholder="Banned by Web Admin">
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Ban Kick Message</label>
+          <input id="s-alert-ban-kick" class="input" type="text" style="width:100%" placeholder="You have been banned by Web Admin.">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveAlertSettings()">Save Alerts</button>
+    </div>
+  </div>
+
+  <!-- Security Tab -->
+  <div class="settings-panel" id="panel-security">
+    <div class="card card-full">
+      <div class="card-header"><h2>Security Settings</h2></div>
+      <div class="settings-form">
+        <div class="settings-field">
+          <label class="settings-label">Session Timeout (minutes)</label>
+          <input id="s-sec-timeout" class="input" type="number" min="1" max="1440" style="width:100%">
+        </div>
+        <div class="settings-field settings-row">
+          <span class="settings-label">Force Password Change</span>
+          <button id="s-sec-forcepw" class="toggle-sw on" onclick="this.classList.toggle('on')"></button>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveSecuritySettings()">Save Security</button>
+    </div>
+  </div>
+
+  <!-- Account Tab -->
+  <div class="settings-panel" id="panel-account">
+    <div class="card card-full">
+      <div class="card-header"><h2>Account</h2></div>
+      <div class="settings-form">
+        <div class="settings-field">
+          <label class="settings-label">Username</label>
+          <input id="s-acct-user" class="input" type="text" readonly style="width:100%;background:var(--bg-input);opacity:.7;">
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Role</label>
+          <input id="s-acct-role" class="input" type="text" readonly style="width:100%;background:var(--bg-input);opacity:.7;">
+        </div>
+      </div>
+      <div class="card-header" style="margin-top:1.5rem;"><h2>Change Password</h2></div>
+      <div class="settings-form">
+        <div class="settings-field">
+          <label class="settings-label">Current Password</label>
+          <input id="s-acct-oldpw" class="input" type="password" style="width:100%" placeholder="Current password…">
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">New Password</label>
+          <input id="s-acct-newpw" class="input" type="password" style="width:100%" placeholder="New password…">
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Confirm Password</label>
+          <input id="s-acct-confirmpw" class="input" type="password" style="width:100%" placeholder="Confirm new password…">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="changeAccountPassword()">Change Password</button>
+    </div>
+  </div>
+</div>

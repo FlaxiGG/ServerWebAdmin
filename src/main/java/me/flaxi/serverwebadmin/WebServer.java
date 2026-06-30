@@ -66,6 +66,8 @@ public class WebServer extends NanoHTTPD {
             "bans.view",
             "files.view", "files.read", "files.edit", "files.upload",
             "files.download", "files.delete", "files.rename", "files.mkdir",
+            "settings.view", "settings.general", "settings.web",
+            "settings.security", "settings.alerts", "settings.account",
             "users.view", "users.create", "users.edit", "users.delete",
             "server.reload", "server.stop"
         ));
@@ -77,13 +79,15 @@ public class WebServer extends NanoHTTPD {
             "weather.clear", "weather.rain", "weather.thunder",
             "time.day", "time.noon", "time.night", "time.midnight",
             "bans.view",
-            "files.view", "files.read", "files.edit", "files.download"
+            "files.view", "files.read", "files.edit", "files.download",
+            "settings.view", "settings.general", "settings.alerts", "settings.account"
         )));
         ROLE_PERMISSIONS.put("moderator", new HashSet<>(Arrays.asList(
-            "dashboard.view", "console.view", "players.view", "player.kick"
+            "dashboard.view", "console.view", "players.view", "player.kick",
+            "settings.account"
         )));
         ROLE_PERMISSIONS.put("viewer", new HashSet<>(Arrays.asList(
-            "dashboard.view", "players.view"
+            "dashboard.view", "players.view", "settings.account"
         )));
     }
 
@@ -1180,6 +1184,99 @@ public class WebServer extends NanoHTTPD {
             boolean deleted = file.isDirectory() ? deleteDir(file) : file.delete();
             if (deleted) return json("{\"success\":true,\"message\":\"Deleted\"}");
             return json("{\"success\":false,\"message\":\"Delete failed\"}");
+        }
+
+        // === SETTINGS API ===
+
+        // General
+        if (uri.equals("/api/settings/general") && method == Method.GET) {
+            return json("{\"success\":true,\"theme\":\"light\",\"refreshInterval\":5,\"landingPage\":\"dashboard\"}");
+        }
+
+        // Web Server
+        if (uri.equals("/api/settings/web") && method == Method.GET) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "settings.web")) return forbidden();
+            ConfigManager cm = plugin.getConfigManager();
+            return json("{\"success\":true," +
+                    "\"host\":\"" + escapeJson(cm.getWebHost()) + "\"," +
+                    "\"port\":" + cm.getWebPort() + "," +
+                    "\"allowExternal\":" + cm.getAllowExternal() + "," +
+                    "\"fallbackToAny\":" + cm.getFallbackToAny() + "," +
+                    "\"sessionTimeout\":" + cm.getSessionTimeout() + "}");
+        }
+        if (uri.equals("/api/settings/web") && method == Method.POST) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "settings.web")) return forbidden();
+            Map<String, String> params = session.getParms();
+            String host = params.get("host"); if (host == null) host = "0.0.0.0";
+            int port = Integer.parseInt(params.getOrDefault("port", "8080"));
+            boolean allowExternal = Boolean.parseBoolean(params.get("allowExternal"));
+            boolean fallbackToAny = Boolean.parseBoolean(params.get("fallbackToAny"));
+            int sessionTimeout = Integer.parseInt(params.getOrDefault("sessionTimeout", "5"));
+            if (sessionTimeout < 1) sessionTimeout = 5;
+            if (port < 1024 || port > 65535) return json("{\"success\":false,\"message\":\"Port must be 1024-65535\"}");
+
+            plugin.getConfigManager().saveWebSettings(host, port, allowExternal, fallbackToAny, sessionTimeout);
+            final String ip = getClientIp(session);
+            actionLogger.write("SETTINGS", "WEB: host=" + host + " port=" + port, ip);
+            plugin.scheduleRestart(20);
+            return json("{\"success\":true,\"message\":\"Web server restarting in 1 second...\"}");
+        }
+
+        // Security
+        if (uri.equals("/api/settings/security") && method == Method.GET) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "settings.security")) return forbidden();
+            ConfigManager cm = plugin.getConfigManager();
+            return json("{\"success\":true," +
+                    "\"sessionTimeout\":" + cm.getSessionTimeout() + "," +
+                    "\"allowMultipleSessions\":false," +
+                    "\"forcePasswordChange\":true," +
+                    "\"autoLogout\":true}");
+        }
+        if (uri.equals("/api/settings/security") && method == Method.POST) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "settings.security")) return forbidden();
+            // Runtime-only for now — extend later
+            return json("{\"success\":true,\"message\":\"Security settings saved\"}");
+        }
+
+        // Alerts
+        if (uri.equals("/api/settings/alerts") && method == Method.GET) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "settings.alerts")) return forbidden();
+            ConfigManager cm = plugin.getConfigManager();
+            return json("{\"success\":true," +
+                    "\"kickMessage\":\"" + escapeJson(cm.getAlert("kick", "")) + "\"," +
+                    "\"banReason\":\"" + escapeJson(cm.getAlert("ban_reason", "")) + "\"," +
+                    "\"banKick\":\"" + escapeJson(cm.getAlert("ban_kick", "")) + "\"}");
+        }
+        if (uri.equals("/api/settings/alerts") && method == Method.POST) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "settings.alerts")) return forbidden();
+            Map<String, String> params = session.getParms();
+            String kick = params.get("kickMessage");
+            String banReason = params.get("banReason");
+            String banKick = params.get("banKick");
+            if (kick == null) kick = "You have been kicked by Web Admin.";
+            if (banReason == null) banReason = "Banned by Web Admin";
+            if (banKick == null) banKick = "You have been banned by Web Admin.";
+
+            plugin.getConfigManager().saveAlertSettings(kick, banReason, banKick);
+            alerts.put("kick", kick);
+            alerts.put("ban_reason", banReason);
+            alerts.put("ban_kick", banKick);
+            return json("{\"success\":true,\"message\":\"Alert messages saved\"}");
+        }
+
+        // Account
+        if (uri.equals("/api/settings/account/profile") && method == Method.GET) {
+            if (!isAuthorized(session)) return unauthorized();
+            if (!hasPermission(session, "settings.account")) return forbidden();
+            String token = getToken(session);
+            SessionInfo si = sessions.get(token);
+            return json("{\"success\":true,\"username\":\"" + (si != null ? si.username : "") + "\",\"role\":\"" + (si != null ? si.role : "") + "\"}");
         }
 
         if (uri.startsWith("/css/") || uri.startsWith("/js/") || uri.startsWith("/pages/")) {

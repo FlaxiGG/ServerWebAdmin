@@ -14,7 +14,7 @@ var heartbeatTimer=null;
   fetch('/api/heartbeat').then(function(r){
     if(r.ok){
       try{permissions=JSON.parse(localStorage.getItem('adminPerms')||'[]');}catch(e){permissions=[];}
-      var pagePerms = {console:'console.view',files:'files.view',players:'players.view',bans:'bans.view',whitelist:'whitelist.view',users:'users.view'};
+      var pagePerms = {console:'console.view',files:'files.view',settings:'settings.view',players:'players.view',bans:'bans.view',whitelist:'whitelist.view',users:'users.view'};
       for(var page in pagePerms){
         if(!hasPerm(pagePerms[page])){
           var b=document.querySelector('.nav-btn[data-page="'+page+'"]');
@@ -186,7 +186,7 @@ function doChangePassword(){
 var currentPage='dashboard';
 var pageTimers={};
 function loadPageContent(page){
-  var pagePerms={console:'console.view',files:'files.view',players:'players.view',bans:'bans.view',whitelist:'whitelist.view',users:'users.view'};
+  var pagePerms={console:'console.view',files:'files.view',settings:'settings.view',players:'players.view',bans:'bans.view',whitelist:'whitelist.view',users:'users.view'};
   var req=pagePerms[page];
   if(req&&!hasPerm(req)){
     document.querySelectorAll('.page.active').forEach(function(p){p.classList.remove('active')});
@@ -210,6 +210,7 @@ function loadPageContent(page){
     if(page==='console'){loadConsole();pageTimers.c=setInterval(loadConsole,3000);}
     if(page==='players'){loadPlayers();pageTimers.p=setInterval(loadPlayers,5000);}
     if(page==='bans'){loadBans();pageTimers.b=setInterval(loadBans,10000);}
+    if(page==='settings'){loadSettings();}
     if(page==='files'){loadFileList('');}
     if(page==='users'){loadUsers();pageTimers.u=setInterval(loadUsers,30000);}
   });
@@ -220,7 +221,7 @@ function switchPage(page){
  loadPageContent(page);
 }
 var hash=location.hash.replace('#','');
-if(hash&&['dashboard','console','files','players','bans','whitelist','users'].indexOf(hash)!==-1){
+if(hash&&['dashboard','console','files','settings','players','bans','whitelist','users'].indexOf(hash)!==-1){
  currentPage=hash;
  document.querySelector('.nav-btn.active').classList.remove('active');
  document.querySelector('.nav-btn[data-page=\"'+hash+'\"]').classList.add('active');
@@ -596,6 +597,102 @@ function showChangePassword(name){
   .then(function(r){if(r.status===403){showToast('You are not allowed to do this');return null;}return r.json();})
   .then(function(data){showToast(data.message);loadUsers();});
 }
+
+/* === SETTINGS === */
+
+function loadSettings(){
+  loadWebSettings();
+  loadAlertSettings();
+  loadAccountSettings();
+}
+
+function switchSettingsTab(tab){
+  document.querySelectorAll('.settings-tab').forEach(function(t){t.classList.remove('active');});
+  document.querySelector('.settings-tab[onclick*="'+tab+'"]').classList.add('active');
+  document.querySelectorAll('.settings-panel.active').forEach(function(p){p.classList.remove('active');});
+  document.getElementById('panel-'+tab).classList.add('active');
+}
+
+function loadWebSettings(){
+  fetch('/api/settings/web')
+  .then(function(r){return r.json();})
+  .then(function(data){
+    if(!data.success)return;
+    setInput('s-web-host',data.host||'0.0.0.0');
+    setInput('s-web-port',data.port||8080);
+    setToggle('s-web-external',data.allowExternal!==false);
+    setToggle('s-web-fallback',data.fallbackToAny!==false);
+    setInput('s-web-timeout',data.sessionTimeout||5);
+  }).catch(function(){});
+}
+
+function loadAlertSettings(){
+  fetch('/api/settings/alerts')
+  .then(function(r){return r.json();})
+  .then(function(data){
+    if(!data.success)return;
+    setInput('s-alert-kick',data.kickMessage||'');
+    setInput('s-alert-ban-reason',data.banReason||'');
+    setInput('s-alert-ban-kick',data.banKick||'');
+  }).catch(function(){});
+}
+
+function loadAccountSettings(){
+  fetch('/api/settings/account/profile')
+  .then(function(r){return r.json();})
+  .then(function(data){
+    if(!data.success)return;
+    document.getElementById('s-acct-user').value=data.username||'';
+    document.getElementById('s-acct-role').value=data.role||'';
+  }).catch(function(){});
+}
+
+function saveWebSettings(){
+  var host=getInput('s-web-host');
+  var port=getInput('s-web-port');
+  if(port<1024||port>65535){showToast('Port must be 1024-65535');return;}
+  var allow=getToggle('s-web-external');
+  var fallback=getToggle('s-web-fallback');
+  var timeout=getInput('s-web-timeout');
+  fetch('/api/settings/web?host='+encodeURIComponent(host)+'&port='+port+'&allowExternal='+allow+'&fallbackToAny='+fallback+'&sessionTimeout='+timeout,{method:'POST'})
+  .then(function(r){return r.json();})
+  .then(function(data){showToast(data.message);if(data.success){setTimeout(function(){location.reload();},2000);}});
+}
+
+function saveAlertSettings(){
+  fetch('/api/settings/alerts?kickMessage='+encodeURIComponent(getInput('s-alert-kick')||'')+'&banReason='+encodeURIComponent(getInput('s-alert-ban-reason')||'')+'&banKick='+encodeURIComponent(getInput('s-alert-ban-kick')||''),{method:'POST'})
+  .then(function(r){return r.json();})
+  .then(function(data){showToast(data.message);});
+}
+
+function saveSecuritySettings(){
+  fetch('/api/settings/security?sessionTimeout='+getInput('s-sec-timeout')+'&forcePassword='+getToggle('s-sec-forcepw'),{method:'POST'})
+  .then(function(r){return r.json();})
+  .then(function(data){showToast(data.message);});
+}
+
+function changeAccountPassword(){
+  var oldPw=getInput('s-acct-oldpw');
+  var newPw=getInput('s-acct-newpw');
+  var confirm=getInput('s-acct-confirmpw');
+  if(!oldPw||!newPw||!confirm){showToast('All fields are required');return;}
+  if(newPw!==confirm){showToast('Passwords do not match');return;}
+  fetch('/api/change-password?username='+encodeURIComponent(currentUser)+'&oldPassword='+encodeURIComponent(oldPw)+'&newPassword='+encodeURIComponent(newPw)+'&confirmPassword='+encodeURIComponent(confirm),{method:'POST'})
+  .then(function(r){return r.json();})
+  .then(function(data){
+    showToast(data.message);
+    if(data.success){
+      document.getElementById('s-acct-oldpw').value='';
+      document.getElementById('s-acct-newpw').value='';
+      document.getElementById('s-acct-confirmpw').value='';
+    }
+  });
+}
+
+function setInput(id,val){var e=document.getElementById(id);if(e)e.value=val;}
+function getInput(id){var e=document.getElementById(id);return e?e.value:'';}
+function setToggle(id,val){var e=document.getElementById(id);if(e){if(val)e.classList.add('on');else e.classList.remove('on');}}
+function getToggle(id){var e=document.getElementById(id);return e?e.classList.contains('on'):false;}
 
 /* === FILE MANAGER === */
 
